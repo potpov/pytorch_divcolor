@@ -8,9 +8,10 @@ from torch.utils.data import Dataset
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 
+
 class colordata(Dataset):
 
-  def __init__(self, out_directory, listdir=None, featslistdir=None, shape=(64, 64), \
+  def __init__(self, out_directory, listdir=None, featslistdir=None, shape=(64, 64),
     subdir=False, ext='JPEG', outshape=(256, 256), split='train'):
 
     self.img_fns = []
@@ -19,11 +20,11 @@ class colordata(Dataset):
     with open('%s/list.%s.vae.txt' % (listdir, split), 'r') as ftr:
       for img_fn in ftr:
         self.img_fns.append(img_fn.strip('\n'))
-      
+
     with open('%s/list.%s.txt' % (featslistdir, split), 'r') as ftr:
       for feats_fn in ftr:
         self.feats_fns.append(feats_fn.strip('\n'))
-      
+
     self.img_num = min(len(self.img_fns), len(self.feats_fns))
     self.shape = shape
     self.outshape = outshape
@@ -32,7 +33,7 @@ class colordata(Dataset):
     self.lossweights = None
     countbins = 1./np.load('data/zhang_weights/prior_probs.npy')
     binedges = np.load('data/zhang_weights/ab_quantize.npy').reshape(2, 313)
-    lossweights = {}  
+    lossweights = {}
     for i in range(313):
       if binedges[0, i] not in lossweights:
         lossweights[binedges[0, i]] = {}
@@ -42,7 +43,7 @@ class colordata(Dataset):
 
   def __len__(self):
     return self.img_num
- 
+
   def __getitem__(self, idx):
     color_ab = np.zeros((2, self.shape[0], self.shape[1]), dtype='f')
     weights = np.ones((2, self.shape[0], self.shape[1]), dtype='f')
@@ -51,7 +52,7 @@ class colordata(Dataset):
     greyfeats = np.zeros((512, 28, 28), dtype='f')
 
     img_large = cv2.imread(self.img_fns[idx])
-    if(self.shape is not None):
+    if self.shape is not None:
       img = cv2.resize(img_large, (self.shape[0], self.shape[1]))
       img_outres = cv2.resize(img_large, (self.outshape[0], self.outshape[1]))
 
@@ -67,11 +68,11 @@ class colordata(Dataset):
     color_ab[0, :, :] = img_lab[..., 1].reshape(1, self.shape[0], self.shape[1])
     color_ab[1, :, :] = img_lab[..., 2].reshape(1, self.shape[0], self.shape[1])
 
-    if(self.lossweights is not None):
+    if self.lossweights is not None:
       weights = self.__getweights__(color_ab)
 
     featobj = np.load(self.feats_fns[idx])
-    greyfeats[:,:,:] = featobj['arr_0']
+    greyfeats[:, :, :] = featobj['arr_0']
 
     return color_ab, recon_const, weights, recon_const_outres, greyfeats
 

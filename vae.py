@@ -35,19 +35,19 @@ class VAE(nn.Module):
     self.cond_enc_bn4 = nn.BatchNorm2d(1024)
 
     #Decoder layers
-    self.dec_upsamp1 = nn.Upsample(scale_factor=4, mode='bilinear')
+    self.dec_upsamp1 = nn.Upsample(scale_factor=4, mode='bilinear', align_corners=True)
     self.dec_conv1 = nn.Conv2d(1024+self.hidden_size, 512, 3, stride=1, padding=1)
     self.dec_bn1 = nn.BatchNorm2d(512)
-    self.dec_upsamp2 = nn.Upsample(scale_factor=2, mode='bilinear')
+    self.dec_upsamp2 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
     self.dec_conv2 = nn.Conv2d(512*2, 256, 5, stride=1, padding=2)
     self.dec_bn2 = nn.BatchNorm2d(256)
-    self.dec_upsamp3 = nn.Upsample(scale_factor=2, mode='bilinear')
+    self.dec_upsamp3 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
     self.dec_conv3 = nn.Conv2d(256*2, 128, 5, stride=1, padding=2)
     self.dec_bn3 = nn.BatchNorm2d(128)
-    self.dec_upsamp4 = nn.Upsample(scale_factor=2, mode='bilinear')
+    self.dec_upsamp4 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
     self.dec_conv4 = nn.Conv2d(128*2, 64, 5, stride=1, padding=2)
     self.dec_bn4 = nn.BatchNorm2d(64)
-    self.dec_upsamp5 = nn.Upsample(scale_factor=2, mode='bilinear')
+    self.dec_upsamp5 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
     self.dec_conv5 = nn.Conv2d(64, 2, 5, stride=1, padding=2)
 
   def encoder(self, x):
@@ -96,7 +96,7 @@ class VAE(nn.Module):
     x = F.relu(self.dec_conv4(x))
     x = self.dec_bn4(x)
     x = self.dec_upsamp5(x) 
-    x = F.tanh(self.dec_conv5(x))
+    x = torch.tanh(self.dec_conv5(x))
     return x
       
   #define forward pass
