@@ -1,8 +1,8 @@
-import torch
 import visdom
 import numpy as np
 
-class Logger():
+
+class Logger:
 
   def __init__(self, server, port, outdir):
     self.vis = visdom.Visdom(port=port, server=server)
@@ -14,16 +14,16 @@ class Logger():
         X=np.array([0.], dtype='f'),
         Y=np.array([0.], dtype='f'),
         opts=dict(
-          xlabel='Iteration',\
-          ylabel='Loss',\
+          xlabel='Iteration',
+          ylabel='Loss',
           title=title)))
 
     self.vis_plot_test_vae = self.vis.line(
         X=np.array([0.], dtype='f'),
         Y=np.array([0.], dtype='f'),
         opts=dict(
-          xlabel='Iteration',\
-          ylabel='Test Loss',\
+          xlabel='Iteration',
+          ylabel='Test Loss',
           title='VAE Test Loss'))
 
 
@@ -34,8 +34,8 @@ class Logger():
         X=np.array([0.], dtype='f'),
         Y=np.array([0.], dtype='f'),
         opts=dict(
-          xlabel='Iteration',\
-          ylabel='Loss',\
+          xlabel='Iteration',
+          ylabel='Loss',
           title=title)))
 
     self.fp_vae = open('%s/log_vae.txt' % outdir, 'w')
@@ -52,7 +52,7 @@ class Logger():
 
   def update_plot(self, x, losses, plot_type='vae'):
 
-    if(plot_type == 'vae'):
+    if plot_type == 'vae':
       self.fp_vae.write('%f;' % x)
       for loss_i, loss in enumerate(losses):
         win = self.vis_plot_vae[loss_i]
@@ -63,9 +63,7 @@ class Logger():
         self.fp_vae.write(' %f;' % loss)
       self.fp_vae.write('\n')
       self.fp_vae.flush()
-        
-
-    elif(plot_type == 'mdn'):
+    elif plot_type == 'mdn':
       for loss_i, loss in enumerate(losses):
         win = self.vis_plot_mdn[loss_i]
         self.vis.updateTrace(

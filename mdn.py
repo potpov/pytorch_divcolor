@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-from torch.autograd import Variable
+import conf
 
 
 class MDN(nn.Module):
@@ -12,7 +11,7 @@ class MDN(nn.Module):
     super(MDN, self).__init__()
 
     self.feats_nch = 512
-    self.hidden_size = 64
+    self.hidden_size = conf.HIDDENSIZE
     self.nmix = 8
     self.nout = (self.hidden_size+1)*self.nmix
 

@@ -2,47 +2,29 @@ from __future__ import print_function
 
 import argparse
 import os
-import socket
-import sys
 import numpy as np 
 
 from colordata import colordata
 from vae import VAE
+from cvae import CVAE
 from mdn import MDN
 from logger import Logger
-
+import conf
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.autograd import Variable
 from torch.utils.data import DataLoader
+import models
 
 from tqdm import tqdm 
 
+
 parser = argparse.ArgumentParser(description='PyTorch Diverse Colorization')
 
-parser.add_argument('dataset_key', help='Dataset')
+# parser.add_argument('dataset_key', help='Dataset')
 
 parser.add_argument('-g', '--gpu', type=int, default=0,
                     help='gpu device id')
-
-parser.add_argument('-e', '--epochs', type=int, default=15,
-                    help='Number of epochs')
-
-parser.add_argument('-b', '--batchsize', type=int, default=32,
-                    help='Batch size')
-
-parser.add_argument('-z', '--hiddensize', type=int, default=64,
-                    help='Latent vector dimension')
-
-parser.add_argument('-n', '--nthreads', type=int, default=4,
-                    help='Data loader threads')
-
-parser.add_argument('-em', '--epochs_mdn', type=int, default=7,
-                    help='Number of epochs for MDN')
-
-parser.add_argument('-m', '--nmix', type=int, default=8,
-                    help='Number of diverse colorization (or output gmm components)')
 
 parser.add_argument('-lg', '--logstep', type=int, default=100,
                     help='Interval to log data')
@@ -63,24 +45,16 @@ if(args.visdom):
   import visdom
 
 
-def get_dirpaths(args): 
-    if args.dataset_key == 'lfw':
-        out_dir = 'data/output/lfw/'
-        listdir = 'data/imglist/lfw/'
-        featslistdir = 'data/featslist/lfw/'
-    else:
-        raise NameError('[ERROR] Incorrect key: %s' % (args.dataset_key))
-    return out_dir, listdir, featslistdir
-
-
-def vae_loss(mu, logvar, pred, gt, lossweights, batchsize): 
+def vae_loss(mu, logvar, pred, gt, lossweights, batchsize):
+    # Kullback–Leibler divergence to force color encoder to the normal distribution
     kl_element = torch.add(torch.add(torch.add(mu.pow(2), logvar.exp()), -1), logvar.mul(-1))
     kl_loss = torch.sum(kl_element).mul(.5)
+    # L-Hist
     gt = gt.view(-1, 64*64*2)
     pred = pred.view(-1, 64*64*2)
     recon_element = torch.sqrt(torch.sum(torch.mul(torch.add(gt, pred.mul(-1)).pow(2), lossweights), 1))
     recon_loss = torch.sum(recon_element).mul(1./(batchsize))
-
+    # normal L2 loss
     recon_element_l2 = torch.sqrt(torch.sum(torch.add(gt, pred.mul(-1)).pow(2), 1))
     recon_loss_l2 = torch.sum(recon_element_l2).mul(1./(batchsize))
 
@@ -116,15 +90,14 @@ def test_vae(model):
 
     model.train(False)
 
-    out_dir, listdir, featslistdir = get_dirpaths(args)
     batchsize = args.batchsize
     hiddensize = args.hiddensize
     nmix = args.nmix
 
     data = colordata(
-      os.path.join(out_dir, 'images'),
-      listdir=listdir,
-      featslistdir=featslistdir,
+      os.path.join(conf.OUT_DIR, 'images'),
+      listdir=conf.LISTDIR,
+      featslistdir=conf.FEATSLISTDIR,
       split='test')
 
     nbatches = np.int_(np.floor(data.img_num/batchsize))
@@ -159,16 +132,15 @@ def test_vae(model):
 
 
 def train_vae(logger=None):
-    out_dir, listdir, featslistdir = get_dirpaths(args)
     batchsize = args.batchsize
     hiddensize = args.hiddensize
     nmix = args.nmix
     nepochs = args.epochs
 
     data = colordata(
-        os.path.join(out_dir, 'images'),
-        listdir=listdir,
-        featslistdir=featslistdir,
+        os.path.join(conf.OUT_DIR, 'images'),
+        listdir=conf.LISTDIR,
+        featslistdir=conf.FEATSLISTDIR,
         split='train')
 
     nbatches = np.int_(np.floor(data.img_num/batchsize))
@@ -176,7 +148,7 @@ def train_vae(logger=None):
     data_loader = DataLoader(dataset=data, num_workers=args.nthreads,
                              batch_size=batchsize, shuffle=True, drop_last=True)
 
-    model = VAE()
+    model = CVAE()
     model.cuda()
     model.train(True)
 
@@ -228,20 +200,19 @@ def train_vae(logger=None):
             logger.update_test_plot(epochs, test_loss)
         print('[DEBUG] VAE Test Loss, epoch %d has loss %f' % (epochs, test_loss))
 
-        torch.save(model.state_dict(), '%s/models/model_vae.pth' % (out_dir))
+        torch.save(model.state_dict(), '%s/models/model_vae.pth' % (conf.OUT_DIR))
 
 
 def train_mdn(logger=None):
-    out_dir, listdir, featslistdir = get_dirpaths(args)
     batchsize = args.batchsize
     hiddensize = args.hiddensize
     nmix = args.nmix
     nepochs = args.epochs_mdn
 
     data = colordata(
-        os.path.join(out_dir, 'images'),
-        listdir=listdir,
-        featslistdir=featslistdir,
+        os.path.join(conf.OUT_DIR, 'images'),
+        listdir=conf.LISTDIR,
+        featslistdir=conf.FEATSLISTDIR,
         split='train')
 
     nbatches = np.int_(np.floor(data.img_num/batchsize))
@@ -251,7 +222,7 @@ def train_mdn(logger=None):
 
     model_vae = VAE()
     model_vae.cuda()
-    model_vae.load_state_dict(torch.load('%s/models/model_vae.pth' % (out_dir)))
+    model_vae.load_state_dict(torch.load('%s/models/model_vae.pth' % (conf.OUT_DIR)))
     model_vae.train(False)
 
     model_mdn = MDN()
@@ -291,19 +262,18 @@ def train_mdn(logger=None):
 
         train_loss = (train_loss*1.)/(nbatches)
         print('[DEBUG] Training MDN, epoch %d has loss %f' % (epochs_mdn, train_loss))
-        torch.save(model_mdn.state_dict(), '%s/models/model_mdn.pth' % (out_dir))
+        torch.save(model_mdn.state_dict(), '%s/models/model_mdn.pth' % (conf.OUT_DIR))
 
 
 def divcolor():
-    out_dir, listdir, featslistdir = get_dirpaths(args)
     batchsize = args.batchsize
     hiddensize = args.hiddensize
     nmix = args.nmix
 
     data = colordata(
-        os.path.join(out_dir, 'images'),
-        listdir=listdir,
-        featslistdir=featslistdir,
+        os.path.join(conf.OUT_DIR, 'images'),
+        listdir=conf.LISTDIR,
+        featslistdir=conf.FEATSLISTDIR,
         split='test')
 
     nbatches = np.int_(np.floor(data.img_num/batchsize))
@@ -313,12 +283,12 @@ def divcolor():
 
     model_vae = VAE()
     model_vae.cuda()
-    model_vae.load_state_dict(torch.load('%s/models/model_vae.pth' % (out_dir)))
+    model_vae.load_state_dict(torch.load('%s/models/model_vae.pth' % (conf.OUT_DIR)))
     model_vae.train(False)
 
     model_mdn = MDN()
     model_mdn.cuda()
-    model_mdn.load_state_dict(torch.load('%s/models/model_mdn.pth' % (out_dir)))
+    model_mdn.load_state_dict(torch.load('%s/models/model_mdn.pth' % (conf.OUT_DIR)))
     model_mdn.train(False)
 
     for batch_idx, (batch, batch_recon_const, batch_weights,
@@ -358,13 +328,12 @@ def divcolor():
 
 if __name__ == '__main__':
 
-    # os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
-
     logger = None
     if(args.visdom):
-        outdir, _, _ = get_dirpaths(args)
-        logger = Logger(args.server, args.port_num, outdir)
+        logger = Logger(args.server, args.port_num, conf.OUT_DIR)
 
-    train_vae(logger=logger)
-    train_mdn(logger=logger)
-    divcolor()
+    models.model_a()
+
+    # train_vae(logger=logger)
+    # train_mdn(logger=logger)
+    # divcolor()
