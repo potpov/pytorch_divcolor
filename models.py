@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 from tqdm import tqdm
-import Utils
+import utils
 
 
 def model_a():
@@ -25,7 +25,7 @@ def model_a():
     # LOAD TRAINING DATA
     ####################
 
-    data, data_loader = Utils.load_data('train')
+    data, data_loader = utils.load_data('train')
     nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
 
     ##############
@@ -46,13 +46,12 @@ def model_a():
             optimizer.zero_grad()
             mu, logvar, color_out = vae(color=input_color, z_in=None)
             # fancy LOSS Calculation
-            kl_loss, recon_loss, recon_loss_l2 = Utils.vae_loss(
+            kl_loss, recon_loss, recon_loss_l2 = utils.vae_loss(
                 mu,
                 logvar,
                 color_out,
                 input_color,
-                lossweights,
-                conf.BATCHSIZE
+                lossweights
             )
             loss = kl_loss.mul(1e-2) + recon_loss
             recon_loss_l2.detach()
@@ -80,7 +79,11 @@ def model_a():
             mu, logvar, _ = vae(color=input_color, z_in=None)
             mdn_gmm_params = mdn(input_feats)
 
-            loss, loss_l2 = Utils.mdn_loss(mdn_gmm_params, mu, torch.sqrt(torch.exp(logvar)), conf.BATCHSIZE)
+            loss, loss_l2 = utils.mdn_loss(
+                mdn_gmm_params,
+                mu,
+                torch.sqrt(torch.exp(logvar)),
+            )
             loss.backward()
 
             optimizer.step()
@@ -92,7 +95,7 @@ def model_a():
     # LOAD TESTING DATA
     ###################
 
-    data, data_loader = Utils.load_data('test')
+    data, data_loader = utils.load_data('test')
     nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
 
     #########
@@ -107,7 +110,7 @@ def model_a():
         input_feats = batch_feats.cuda()
 
         mdn_gmm_params = mdn(input_feats)
-        gmm_mu, gmm_pi = Utils.get_gmm_coeffs(mdn_gmm_params)
+        gmm_mu, gmm_pi = utils.get_gmm_coeffs(mdn_gmm_params)
         gmm_pi = gmm_pi.view(-1, 1)
         gmm_mu = gmm_mu.reshape(-1, conf.HIDDENSIZE)
 
@@ -151,7 +154,7 @@ def model_b():
     # LOAD TRAINING DATA
     ####################
 
-    data, data_loader = Utils.load_data('train')
+    data, data_loader = utils.load_data('train')
     nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
 
     ##############
@@ -174,11 +177,10 @@ def model_b():
             optimizer.zero_grad()
             color_out = cvae(color=input_color, greylevel=input_greylevel)
             # fancy LOSS Calculation
-            recon_loss, recon_loss_l2 = Utils.cvae_loss(
+            recon_loss, recon_loss_l2 = utils.cvae_loss(
                 color_out,
                 input_color,
                 lossweights,
-                conf.BATCHSIZE
             )
             loss = recon_loss
             recon_loss_l2.detach()
@@ -192,7 +194,7 @@ def model_b():
     # LOAD TESTING DATA
     ###################
 
-    data, data_loader = Utils.load_data('test')
+    data, data_loader = utils.load_data('test')
     nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
 
     #########
