@@ -1,9 +1,10 @@
-
 import conf
 import torch
 import torch.nn.functional as F
-
-
+from torch.utils.data import DataLoader
+from colordata import colordata
+import os
+import numpy as np
 
 
 def vae_loss(mu, logvar, pred, gt, lossweights, batchsize):
@@ -45,3 +46,22 @@ def mdn_loss(gmm_params, mu, stddev, batchsize):
     gmm_loss = torch.mean(torch.add(-1*torch.log(gmm_pi_min+1e-30), dist_min))
     gmm_loss_l2 = torch.mean(dist_min)
     return gmm_loss, gmm_loss_l2
+
+
+def load_data(dataset_type):
+    data = colordata(
+        os.path.join(conf.OUT_DIR, 'images'),
+        listdir=conf.LISTDIR,
+        featslistdir=conf.FEATSLISTDIR,
+        split=dataset_type
+    )
+
+    data_loader = DataLoader(
+        dataset=data,
+        num_workers=conf.NTHREADS,
+        batch_size=conf.BATCHSIZE,
+        shuffle=True,
+        drop_last=True
+    )
+
+    return data, data_loader

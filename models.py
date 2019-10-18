@@ -17,7 +17,7 @@ def model_a():
     # CREATING THE NETWORK
     ######################
 
-    print("starting model A...")
+    print("creating model A architecture...")
     vae = VAE()
     vae.cuda()
     mdn = MDN()
@@ -27,22 +27,8 @@ def model_a():
     # LOAD TRAINING DATA
     ####################
 
-    data = colordata(
-        os.path.join(conf.OUT_DIR, 'images'),
-        listdir=conf.LISTDIR,
-        featslistdir=conf.FEATSLISTDIR,
-        split='train'
-    )
-
+    data, data_loader = Utils.load_data('train')
     nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
-
-    data_loader = DataLoader(
-        dataset=data,
-        num_workers=conf.NTHREADS,
-        batch_size=conf.BATCHSIZE,
-        shuffle=True,
-        drop_last=True
-    )
 
     ##############
     # TRAINING VAE
@@ -104,28 +90,14 @@ def model_a():
             optimizer.step()
 
         torch.save(mdn.state_dict(), '%s/models/model_mdn.pth' % conf.OUT_DIR)
-    print("MDN training completed.")
+    print("MDN training completed. starting testing.")
 
     ###################
     # LOAD TESTING DATA
     ###################
 
-    data = colordata(
-        os.path.join(conf.OUT_DIR, 'images'),
-        listdir=conf.LISTDIR,
-        featslistdir=conf.FEATSLISTDIR,
-        split='test'
-    )
-
+    data, data_loader = Utils.load_data('test')
     nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
-
-    data_loader = DataLoader(
-        dataset=data,
-        num_workers=conf.NTHREADS,
-        batch_size=conf.BATCHSIZE,
-        shuffle=True,
-        drop_last=True
-    )
 
     #########
     # TESTING
