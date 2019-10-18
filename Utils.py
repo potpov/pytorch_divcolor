@@ -6,6 +6,10 @@ from colordata import colordata
 import os
 import numpy as np
 
+# TO DO
+# create function for KL loss, for recon loss and L2 loss
+# call them separately when calculating vaeloss and cvaeloss
+
 
 def vae_loss(mu, logvar, pred, gt, lossweights, batchsize):
     # Kullback–Leibler divergence to force color encoder to the normal distribution
@@ -21,6 +25,18 @@ def vae_loss(mu, logvar, pred, gt, lossweights, batchsize):
     recon_loss_l2 = torch.sum(recon_element_l2).mul(1./(batchsize))
 
     return kl_loss, recon_loss, recon_loss_l2
+
+
+def cvae_loss(pred, gt, lossweights, batchsize):
+    # L-Hist
+    gt = gt.view(-1, 64*64*2)
+    pred = pred.view(-1, 64*64*2)
+    recon_element = torch.sqrt(torch.sum(torch.mul(torch.add(gt, pred.mul(-1)).pow(2), lossweights), 1))
+    recon_loss = torch.sum(recon_element).mul(1./(batchsize))
+    # normal L2 loss
+    recon_element_l2 = torch.sqrt(torch.sum(torch.add(gt, pred.mul(-1)).pow(2), 1))
+    recon_loss_l2 = torch.sum(recon_element_l2).mul(1./(batchsize))
+    return recon_loss, recon_loss_l2
 
 
 def get_gmm_coeffs(gmm_params):

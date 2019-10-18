@@ -1,9 +1,7 @@
 from vae import VAE
 from mdn import MDN
+from cvae import CVAE
 import conf
-from torch.utils.data import DataLoader
-from colordata import colordata
-import os
 import numpy as np
 import torch
 import torch.optim as optim
@@ -44,7 +42,6 @@ def model_a():
             input_color = batch.cuda()
             lossweights = batch_weights.cuda()
             lossweights = lossweights.view(conf.BATCHSIZE, -1)
-            # z = torch.randn(conf.BATCHSIZE, conf.HIDDENSIZE)
 
             optimizer.zero_grad()
             mu, logvar, color_out = vae(color=input_color, z_in=None)
@@ -77,7 +74,6 @@ def model_a():
 
             input_color = batch.cuda()
             input_feats = batch_feats.cuda()
-            # z = torch.randn(conf.BATCHSIZE, conf.HIDDENSIZE)
 
             optimizer.zero_grad()
 
@@ -142,4 +138,85 @@ def model_a():
 
 
 def model_b():
-    pass
+
+    ######################
+    # CREATING THE NETWORK
+    ######################
+
+    print("creating model B architecture...")
+    cvae = CVAE()
+    cvae.cuda()
+
+    ####################
+    # LOAD TRAINING DATA
+    ####################
+
+    data, data_loader = Utils.load_data('train')
+    nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
+
+    ##############
+    # TRAINING VAE
+    ##############
+
+    print("starting CVAE Training for model B")
+    cvae.train(True)
+    optimizer = optim.Adam(cvae.parameters(), lr=conf.VAE_LR)
+
+    for epochs in range(conf.EPOCHS):
+        for batch_idx, (batch, batch_recon_const, batch_weights, batch_recon_const_outres, _) in \
+                tqdm(enumerate(data_loader), total=nbatches):
+
+            input_color = batch.cuda()
+            lossweights = batch_weights.cuda()
+            lossweights = lossweights.view(conf.BATCHSIZE, -1)
+            input_greylevel = batch_recon_const.cuda()
+
+            optimizer.zero_grad()
+            color_out = cvae(color=input_color, greylevel=input_greylevel)
+            # fancy LOSS Calculation
+            recon_loss, recon_loss_l2 = Utils.cvae_loss(
+                color_out,
+                input_color,
+                lossweights,
+                conf.BATCHSIZE
+            )
+            loss = recon_loss
+            recon_loss_l2.detach()
+            loss.backward()
+            optimizer.step()
+        torch.save(cvae.state_dict(), '%s/models/model_cvae.pth' % conf.OUT_DIR)
+
+    print("CVAE training completed. starting test")
+
+    ###################
+    # LOAD TESTING DATA
+    ###################
+
+    data, data_loader = Utils.load_data('test')
+    nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
+
+    #########
+    # TESTING
+    #########
+
+    cvae.train(False)
+    for batch_idx, (batch, batch_recon_const, batch_weights,
+                    batch_recon_const_outres, batch_feats) in \
+            tqdm(enumerate(data_loader), total=nbatches):
+
+        input_feats = batch_feats.cuda()
+
+        input_greylevel = batch_recon_const.cuda()
+
+        color_out = cvae(color=None, greylevel=input_greylevel)
+
+        data.saveoutput_gt(
+            color_out.cpu().data.numpy(),
+            batch.numpy(),  # grand truth in batch
+            'divcolor_%05d' % (batch_idx),  # output name
+            conf.BATCHSIZE,  # batch size (set to one because we are already looping over the batch)
+            5,  # number of column
+            batch_recon_const_outres.numpy()  # black and white gt
+        )
+
+    print("CVAE testing completed. check out the results in ", conf.OUT_DIR)

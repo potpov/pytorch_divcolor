@@ -22,3 +22,6 @@ python main.py lfw
 
 current output dir is 'data/output/lfw/'
 
+the goal of this net is to be as close as possible to the
+architecture described here: https://arxiv.org/pdf/1612.01958.pdf
+

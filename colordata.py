@@ -93,14 +93,24 @@ class colordata(Dataset):
 
   def saveoutput_gt(self, net_op, gt, prefix, batch_size, num_cols=8, net_recon_const=None):
 
-    net_out_img = self.__tiledoutput__(net_op, batch_size, num_cols=num_cols, \
-      net_recon_const=net_recon_const)
-
-    gt_out_img = self.__tiledoutput__(gt, batch_size, num_cols=num_cols, \
-      net_recon_const=net_recon_const)
-
+    # generating net image section
+    net_out_img = self.__tiledoutput__(
+      net_op,  # net results
+      batch_size,  # iterating over the batch?
+      num_cols=num_cols,  # number of net results
+      net_recon_const=net_recon_const  # what the fuck is this ?!
+    )
+    # creating grandtruth section
+    gt_out_img = self.__tiledoutput__(
+      gt,
+      batch_size,
+      num_cols=num_cols,
+      net_recon_const=net_recon_const
+    )
+    # creating separator
     num_rows = np.int_(np.ceil((batch_size*1.)/num_cols))
     border_img = 255*np.ones((num_rows*self.outshape[0], 128, 3), dtype='uint8')
+    # printing everything as an image
     out_fn_pred = '%s/%s.png' % (self.out_directory, prefix)
     cv2.imwrite(out_fn_pred, np.concatenate((net_out_img, border_img, gt_out_img), axis=1))
     
