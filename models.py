@@ -45,15 +45,14 @@ def model_a():
 
             optimizer.zero_grad()
             mu, logvar, color_out = vae(color=input_color, z_in=None)
-            # fancy LOSS Calculation
-            kl_loss, recon_loss, recon_loss_l2 = utils.vae_loss(
+            kl_loss, recon_loss, recon_loss_l2, mah_loss = utils.vae_loss(
                 mu,
                 logvar,
                 color_out,
                 input_color,
                 lossweights
             )
-            loss = kl_loss.mul(1e-2) + recon_loss
+            loss = kl_loss.mul(1e-2) + recon_loss + mah_loss.mul(0.1)
             recon_loss_l2.detach()
             loss.backward()
             optimizer.step()

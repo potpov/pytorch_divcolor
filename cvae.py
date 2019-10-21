@@ -90,10 +90,16 @@ class CVAE(nn.Module):
         return x
 
     def forward(self, color, greylevel):
-        # when training we accept color and greylevel, they are
-        # both encoded to z1 and z2. decoder gets z1*z2 in order
-        # to recreate the color image.
-        # we also use skips from the b&w image encoder
+        """
+        when training we accept color and greylevel, they are
+        both encoded to z1 and z2. decoder gets z1*z2 in
+        to recreate the color image. we also use skips from the b&w image encoder.
+        on testing we get only the greyscale image, encoder returns z2.
+        a random z1 is sampled and mul is executed. finally the result is decoded to colorize the image
+        :param color: AB channel
+        :param greylevel: L channel
+        :return: predicted AB channel
+        """
         sc_feat32, sc_feat16, sc_feat8, z_grey = self.cond_encoder(greylevel)
         if self.training:
             mu, logvar = self.encoder(color)
@@ -102,9 +108,6 @@ class CVAE(nn.Module):
             z_color = torch.add(mu, torch.mul(eps, stddev))
             z_color = z_color.reshape(-1, conf.HIDDENSIZE, 1, 1).repeat(1, 1, 4, 4)
             z = z_grey * z_color
-        # on testing we get only the greyscale image, encoder returns z2.
-        # a random z1 is sampled and mul is executed. finally the result is
-        # decoded to colorize the image
         else:
             # z1 is random, we don't have color input on testing!
             z_rand = torch.randn(conf.BATCHSIZE, conf.HIDDENSIZE, 1, 1).repeat(1, 1, 4, 4).cuda()

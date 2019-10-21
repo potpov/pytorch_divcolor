@@ -10,3 +10,5 @@ EPOCHS = 20
 VAE_LR = 5e-5  # VAE learning rate
 MDN_LR = 1e-3  # MDN learning rate
 
+PCA_DIR = 'data/pcomp/lfw'
+PCA_COMP_NUMBER = 20

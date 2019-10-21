@@ -4,6 +4,51 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from colordata import colordata
 import os
+import numpy as np
+
+
+def mah_loss(gt, pred):
+    """
+    load pca vals and variance from file
+    :param gt: original color space
+    :param pred: predicted color space
+    :return: Mahalanobis distance as described in the paper
+    """
+    np_pcvec = np.transpose(np.load(os.path.join(conf.PCA_DIR, 'components.mat.npy')))
+    np_pcvar = 1. / np.load(os.path.join(conf.PCA_DIR, 'exp_variance.mat.npy'))
+    pcvec = torch.from_numpy(np_pcvec[:, :conf.PCA_COMP_NUMBER]).cuda()
+    pcvar = torch.from_numpy(np_pcvar[:conf.PCA_COMP_NUMBER]).cuda()
+
+    proj_gt = torch.mm(gt.reshape(32, -1), pcvec)
+    proj_pred = torch.mm(pred.reshape(32, -1), pcvec)
+    pca_loss = torch.mean(
+        torch.sqrt(
+            torch.sum(
+                torch.mul(
+                    proj_gt - proj_pred, proj_gt - proj_pred
+                ) / pcvar, dim=1
+            )
+        )
+    )
+
+    # calculating residuals. just need to mul proj once again and sum up the result
+    # Cres = Ck * Pk * Pk = proj * Pk
+    res_gt = torch.mm(proj_gt, pcvec.T).reshape(conf.BATCHSIZE, -1)
+    res_pred = torch.mm(proj_pred, pcvec.T).reshape(conf.BATCHSIZE, -1)
+    # subtract residual from the original image
+    res_gt = gt.reshape(32, -1) - res_gt
+    res_pred = pred.reshape(32, -1) - res_pred
+    # compute the second part of the Mahalanobis distance
+    res_loss = torch.mean(
+        torch.sqrt(
+            torch.sum(
+                torch.mul(
+                    res_gt - res_pred, res_gt - res_pred
+                ) / pcvar[conf.PCA_COMP_NUMBER - 1], dim=1
+            )
+        )
+    )
+    return pca_loss + res_loss
 
 
 def kl_loss(mu, logvar):
@@ -56,7 +101,8 @@ def vae_loss(mu, logvar, pred, gt, lossweights):
     kl = kl_loss(mu, logvar)
     recon_loss = hist_loss(gt, pred, lossweights)
     recon_loss_l2 = l2_loss(gt, pred)
-    return kl, recon_loss, recon_loss_l2
+
+    return kl, recon_loss, recon_loss_l2, mah_loss(gt, pred)
 
 
 def cvae_loss(pred, gt, lossweights):

@@ -3,7 +3,7 @@ import models
 
 
 if __name__ == '__main__':
-
+    models.model_a()
     models.model_b()
-    # models.model_a()
+
 
