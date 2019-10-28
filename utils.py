@@ -22,33 +22,44 @@ def mah_loss(gt, pred):
     proj_gt = torch.mm(gt.reshape(32, -1), pcvec)
     proj_pred = torch.mm(pred.reshape(32, -1), pcvec)
     pca_loss = torch.mean(
-        torch.sqrt(
-            torch.sum(
-                torch.mul(
-                    proj_gt - proj_pred, proj_gt - proj_pred
-                ) / pcvar, dim=1
-            )
+        torch.sum(
+            (proj_gt - proj_pred)**2 / pcvar, dim=1
         )
     )
 
-    # calculating residuals. just need to mul proj once again and sum up the result
-    # Cres = Ck * Pk * Pk = proj * Pk
-    res_gt = torch.mm(proj_gt, pcvec.T).reshape(conf.BATCHSIZE, -1)
-    res_pred = torch.mm(proj_pred, pcvec.T).reshape(conf.BATCHSIZE, -1)
-    # subtract residual from the original image
-    res_gt = gt.reshape(32, -1) - res_gt
-    res_pred = pred.reshape(32, -1) - res_pred
-    # compute the second part of the Mahalanobis distance
+    # calculating residuals. by subtracting each PCA component to the original image
+    gt_err = gt
+    pred_err = pred
+    for i in range(conf.PCA_COMP_NUMBER):
+        gt_err = gt_err.reshape(32, -1) - torch.mm(torch.mm(gt.reshape(32, -1), pcvec), torch.t(pcvec))
+        pred_err = pred_err.reshape(32, -1) - torch.mm(torch.mm(pred.reshape(32, -1), pcvec), torch.t(pcvec))
     res_loss = torch.mean(
-        torch.sqrt(
-            torch.sum(
-                torch.mul(
-                    res_gt - res_pred, res_gt - res_pred
-                ) / pcvar[conf.PCA_COMP_NUMBER - 1], dim=1
-            )
+        torch.sum(
+            (gt_err - pred_err) ** 2 / (pcvar[conf.PCA_COMP_NUMBER - 1] ** 2), dim=1
         )
     )
     return pca_loss + res_loss
+
+
+def grad_loss(gt, pred):
+    # Horinzontal Sobel filter
+    Sx = torch.Tensor([[-1, 0, 1],
+                       [-2, 0, 2],
+                       [-1, 0, 1]]).cuda()
+    # reshape the filter and compute the conv
+    Sx = Sx.view((1, 1, 3, 3)).repeat(1, 2, 1, 1)
+    G_x = F.conv2d(gt, Sx, padding=1)
+
+    # Vertical Sobel filter
+    Sy = torch.Tensor([[1, 2, 1],
+                       [0, 0, 0],
+                       [-1, -2, -1]]).cuda()
+    # reshape the filter and compute the conv
+    Sy = Sy.view((1, 1, 3, 3)).repeat(1, 2, 1, 1)
+    G_y = F.conv2d(pred, Sy, padding=1)
+    # lui non fa proprio così
+    G = torch.sqrt(torch.pow(G_x, 2) + torch.pow(G_y, 2))
+    return torch.mean(G)
 
 
 def kl_loss(mu, logvar):
@@ -101,8 +112,9 @@ def vae_loss(mu, logvar, pred, gt, lossweights):
     kl = kl_loss(mu, logvar)
     recon_loss = hist_loss(gt, pred, lossweights)
     recon_loss_l2 = l2_loss(gt, pred)
-
-    return kl, recon_loss, recon_loss_l2, mah_loss(gt, pred)
+    mah = mah_loss(gt, pred)
+    grad = grad_loss(gt, pred)
+    return kl, recon_loss, recon_loss_l2, mah, grad
 
 
 def cvae_loss(pred, gt, lossweights):

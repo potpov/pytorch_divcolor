@@ -7,9 +7,15 @@ import torch
 import torch.optim as optim
 from tqdm import tqdm
 import utils
+from tensorboardX import SummaryWriter
+import os
+from torch.optim.lr_scheduler import StepLR
 
 
-def model_a():
+def model_a(load_vae=False, load_mdn=False):
+
+    # tensorboard log
+    writer = SummaryWriter()
 
     ######################
     # CREATING THE NETWORK
@@ -31,64 +37,85 @@ def model_a():
     ##############
     # TRAINING VAE
     ##############
+    if load_vae:
+        vae.load_state_dict(torch.load(os.path.join(conf.OUT_DIR, 'models/model_vae.pth')))
+        print("weights for vae loaded.")
+    else:
+        print("starting VAE Training for model A")
+        vae.train(True)
+        optimizer = optim.Adam(vae.parameters(), lr=conf.VAE_LR)
+        # scheduler = StepLR(optimizer, step_size=conf.SCHED_VAE_STEP, gamma=conf.SCHED_VAE_GAMMA)
+        i = 0
+        for epochs in range(conf.EPOCHS):
+            for batch_idx, (batch, batch_recon_const, batch_weights, batch_recon_const_outres, _) in \
+                    tqdm(enumerate(data_loader), total=nbatches):
+                input_color = batch.cuda()
+                lossweights = batch_weights.cuda()
+                lossweights = lossweights.view(conf.BATCHSIZE, -1)
 
-    print("starting VAE Training for model A")
-    vae.train(True)
-    optimizer = optim.Adam(vae.parameters(), lr=conf.VAE_LR)
+                optimizer.zero_grad()
+                mu, logvar, color_out = vae(color=input_color, z_in=None)
+                kl_loss, recon_loss, _, mah_loss, grad_loss = utils.vae_loss(
+                    mu,
+                    logvar,
+                    color_out,
+                    input_color,
+                    lossweights
+                )
+                loss = kl_loss.mul(conf.KL_W) + recon_loss.mul(conf.HIST_W) + mah_loss.mul(conf.MAH_W) + grad_loss.mul(conf.GRA_W)
+                loss.backward()
+                optimizer.step()
+                writer.add_scalar('VAE_Loss', loss.item(), i)
+                writer.add_scalar('VAE_Loss_grad', grad_loss, i)
+                writer.add_scalar('VAE_Loss_kl', kl_loss, i)
+                writer.add_scalar('VAE_Loss_mah', mah_loss, i)
+                writer.add_scalar('VAE_Loss_hist', recon_loss, i)
+                i = i + 1
+            torch.save(vae.state_dict(), '%s/models/model_vae.pth' % conf.OUT_DIR)
+            # scheduler.step()
 
-    for epochs in range(conf.EPOCHS):
-        for batch_idx, (batch, batch_recon_const, batch_weights, batch_recon_const_outres, _) in \
-                tqdm(enumerate(data_loader), total=nbatches):
-            input_color = batch.cuda()
-            lossweights = batch_weights.cuda()
-            lossweights = lossweights.view(conf.BATCHSIZE, -1)
+        print("VAE training completed. starting MDN training...")
 
-            optimizer.zero_grad()
-            mu, logvar, color_out = vae(color=input_color, z_in=None)
-            kl_loss, recon_loss, recon_loss_l2, mah_loss = utils.vae_loss(
-                mu,
-                logvar,
-                color_out,
-                input_color,
-                lossweights
-            )
-            loss = kl_loss.mul(1e-2) + recon_loss + mah_loss.mul(0.1)
-            recon_loss_l2.detach()
-            loss.backward()
-            optimizer.step()
-        torch.save(vae.state_dict(), '%s/models/model_vae.pth' % conf.OUT_DIR)
+    vae.train(False)
 
     ##############
     # TRAINING MDN
     ##############
 
-    print("VAE training completed. starting MDN training...")
-    vae.train(False)
-    mdn.train(True)
-    optimizer = optim.Adam(mdn.parameters(), lr=conf.MDN_LR)
-    for epochs in range(conf.EPOCHS):
-        for batch_idx, (batch, batch_recon_const, batch_weights, _, batch_feats) in \
-                tqdm(enumerate(data_loader), total=nbatches):
+    if load_mdn:
+        vae.load_state_dict(torch.load(os.path.join(conf.OUT_DIR, 'models/model_mdn.pth')))
+        print("weights for vae loaded.")
+    else:
+        mdn.train(True)
+        optimizer = optim.Adam(mdn.parameters(), lr=conf.MDN_LR)
+        # scheduler = StepLR(optimizer, step_size=conf.SCHED_MDN_STEP, gamma=conf.SCHED_MDN_GAMMA)
+        i = 0
+        for epochs in range(conf.EPOCHS):
+            for batch_idx, (batch, batch_recon_const, batch_weights, _, batch_feats) in \
+                    tqdm(enumerate(data_loader), total=nbatches):
 
-            input_color = batch.cuda()
-            input_feats = batch_feats.cuda()
+                input_color = batch.cuda()
+                input_feats = batch_feats.cuda()
 
-            optimizer.zero_grad()
+                optimizer.zero_grad()
 
-            mu, logvar, _ = vae(color=input_color, z_in=None)
-            mdn_gmm_params = mdn(input_feats)
+                mu, logvar, _ = vae(color=input_color, z_in=None)
+                mdn_gmm_params = mdn(input_feats)
 
-            loss, loss_l2 = utils.mdn_loss(
-                mdn_gmm_params,
-                mu,
-                torch.sqrt(torch.exp(logvar)),
-            )
-            loss.backward()
+                loss, loss_l2 = utils.mdn_loss(
+                    mdn_gmm_params,
+                    mu,
+                    torch.sqrt(torch.exp(logvar)),
+                    conf.BATCHSIZE
+                )
+                loss.backward()
+                optimizer.step()
+                writer.add_scalar('MDN_Loss', loss.item(), i)
+                i = i + 1
 
-            optimizer.step()
-
-        torch.save(mdn.state_dict(), '%s/models/model_mdn.pth' % conf.OUT_DIR)
-    print("MDN training completed. starting testing.")
+            torch.save(mdn.state_dict(), '%s/models/model_mdn.pth' % conf.OUT_DIR)
+            # scheduler.step()
+            print("MDN training completed. starting testing.")
 
     ###################
     # LOAD TESTING DATA
@@ -137,9 +164,10 @@ def model_a():
                                net_recon_const=batch_recon_const_outres_j[orderid, ...])
 
     print("VAE + MDN testing completed. check out the results in ", conf.OUT_DIR)
+    writer.close()
 
 
-def model_b():
+def model_b(load_cvae=False):
 
     ######################
     # CREATING THE NETWORK
@@ -160,34 +188,38 @@ def model_b():
     # TRAINING VAE
     ##############
 
-    print("starting CVAE Training for model B")
-    cvae.train(True)
-    optimizer = optim.Adam(cvae.parameters(), lr=conf.VAE_LR)
+    if load_cvae:
+        cvae.load_state_dict(torch.load(os.path.join(conf.OUT_DIR, 'models/model_mdn.pth')))
+        print("weights for vae loaded.")
+    else:
+        print("starting CVAE Training for model B")
+        cvae.train(True)
+        optimizer = optim.Adam(cvae.parameters(), lr=conf.VAE_LR)
 
-    for epochs in range(conf.EPOCHS):
-        for batch_idx, (batch, batch_recon_const, batch_weights, batch_recon_const_outres, _) in \
-                tqdm(enumerate(data_loader), total=nbatches):
+        for epochs in range(conf.EPOCHS):
+            for batch_idx, (batch, batch_recon_const, batch_weights, batch_recon_const_outres, _) in \
+                    tqdm(enumerate(data_loader), total=nbatches):
 
-            input_color = batch.cuda()
-            lossweights = batch_weights.cuda()
-            lossweights = lossweights.view(conf.BATCHSIZE, -1)
-            input_greylevel = batch_recon_const.cuda()
+                input_color = batch.cuda()
+                lossweights = batch_weights.cuda()
+                lossweights = lossweights.view(conf.BATCHSIZE, -1)
+                input_greylevel = batch_recon_const.cuda()
 
-            optimizer.zero_grad()
-            color_out = cvae(color=input_color, greylevel=input_greylevel)
-            # fancy LOSS Calculation
-            recon_loss, recon_loss_l2 = utils.cvae_loss(
-                color_out,
-                input_color,
-                lossweights,
-            )
-            loss = recon_loss
-            recon_loss_l2.detach()
-            loss.backward()
-            optimizer.step()
-        torch.save(cvae.state_dict(), '%s/models/model_cvae.pth' % conf.OUT_DIR)
+                optimizer.zero_grad()
+                color_out = cvae(color=input_color, greylevel=input_greylevel)
+                # fancy LOSS Calculation
+                recon_loss, recon_loss_l2 = utils.cvae_loss(
+                    color_out,
+                    input_color,
+                    lossweights,
+                )
+                loss = recon_loss
+                recon_loss_l2.detach()
+                loss.backward()
+                optimizer.step()
+            torch.save(cvae.state_dict(), '%s/models/model_cvae.pth' % conf.OUT_DIR)
 
-    print("CVAE training completed. starting test")
+        print("CVAE training completed. starting test")
 
     ###################
     # LOAD TESTING DATA
