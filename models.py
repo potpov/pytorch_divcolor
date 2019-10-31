@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 from tqdm import tqdm
-import utils
+import utilities
 from tensorboardX import SummaryWriter
 import os
 from torch.optim.lr_scheduler import StepLR
@@ -31,7 +31,7 @@ def model_a(load_vae=False, load_mdn=False):
     # LOAD TRAINING DATA
     ####################
 
-    data, data_loader = utils.load_data('train')
+    data, data_loader = utilities.load_data('train')
     nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
 
     ##############
@@ -44,7 +44,7 @@ def model_a(load_vae=False, load_mdn=False):
         print("starting VAE Training for model A")
         vae.train(True)
         optimizer = optim.Adam(vae.parameters(), lr=conf.VAE_LR)
-        # scheduler = StepLR(optimizer, step_size=conf.SCHED_VAE_STEP, gamma=conf.SCHED_VAE_GAMMA)
+        scheduler = StepLR(optimizer, step_size=conf.SCHED_VAE_STEP, gamma=conf.SCHED_VAE_GAMMA)
         i = 0
         for epochs in range(conf.EPOCHS):
             for batch_idx, (batch, batch_recon_const, batch_weights, batch_recon_const_outres, _) in \
@@ -55,26 +55,29 @@ def model_a(load_vae=False, load_mdn=False):
 
                 optimizer.zero_grad()
                 mu, logvar, color_out = vae(color=input_color, z_in=None)
-                kl_loss, recon_loss, _, mah_loss, grad_loss = utils.vae_loss(
+                kl_loss, recon_loss, grad_loss, mah_loss = utilities.vae_loss(
                     mu,
                     logvar,
                     color_out,
                     input_color,
                     lossweights
                 )
-                loss = kl_loss.mul(conf.KL_W) + recon_loss.mul(conf.HIST_W) + mah_loss.mul(conf.MAH_W) + grad_loss.mul(conf.GRA_W)
+                loss = kl_loss.mul(conf.KL_W) + recon_loss.mul(conf.HIST_W) + grad_loss.mul(conf.GRA_W) + mah_loss.mul(conf.MAH_W)
                 loss.backward()
                 optimizer.step()
                 writer.add_scalar('VAE_Loss', loss.item(), i)
                 writer.add_scalar('VAE_Loss_grad', grad_loss, i)
                 writer.add_scalar('VAE_Loss_kl', kl_loss, i)
                 writer.add_scalar('VAE_Loss_mah', mah_loss, i)
+                writer.add_scalar('one weight', vae.enc_fc1.weight.cpu().detach().numpy()[0][0], i)
+                writer.add_scalar('one grad', vae.enc_fc1.weight.grad.cpu().detach().numpy()[0][0], i)
                 writer.add_scalar('VAE_Loss_hist', recon_loss, i)
+                # writer.add_histogram('weights', vae.enc_fc1.weight.cpu().detach().numpy(), i)
                 i = i + 1
             torch.save(vae.state_dict(), '%s/models/model_vae.pth' % conf.OUT_DIR)
-            # scheduler.step()
+            scheduler.step()
 
-        print("VAE training completed. starting MDN training...")
+        print("VAE training completed...")
 
     vae.train(False)
 
@@ -83,12 +86,13 @@ def model_a(load_vae=False, load_mdn=False):
     ##############
 
     if load_mdn:
-        vae.load_state_dict(torch.load(os.path.join(conf.OUT_DIR, 'models/model_mdn.pth')))
-        print("weights for vae loaded.")
+        mdn.load_state_dict(torch.load(os.path.join(conf.OUT_DIR, 'models/model_mdn.pth')))
+        print("weights for mdn loaded.")
     else:
+        print("starting MDN training...")
         mdn.train(True)
         optimizer = optim.Adam(mdn.parameters(), lr=conf.MDN_LR)
-        # scheduler = StepLR(optimizer, step_size=conf.SCHED_MDN_STEP, gamma=conf.SCHED_MDN_GAMMA)
+        scheduler = StepLR(optimizer, step_size=conf.SCHED_MDN_STEP, gamma=conf.SCHED_MDN_GAMMA)
         i = 0
         for epochs in range(conf.EPOCHS):
             for batch_idx, (batch, batch_recon_const, batch_weights, _, batch_feats) in \
@@ -102,7 +106,7 @@ def model_a(load_vae=False, load_mdn=False):
                 mu, logvar, _ = vae(color=input_color, z_in=None)
                 mdn_gmm_params = mdn(input_feats)
 
-                loss, loss_l2 = utils.mdn_loss(
+                loss, loss_l2 = utilities.mdn_loss(
                     mdn_gmm_params,
                     mu,
                     torch.sqrt(torch.exp(logvar)),
@@ -114,14 +118,14 @@ def model_a(load_vae=False, load_mdn=False):
                 i = i + 1
 
             torch.save(mdn.state_dict(), '%s/models/model_mdn.pth' % conf.OUT_DIR)
-            # scheduler.step()
-            print("MDN training completed. starting testing.")
+            scheduler.step()
+        print("MDN training completed. starting testing.")
 
     ###################
     # LOAD TESTING DATA
     ###################
 
-    data, data_loader = utils.load_data('test')
+    data, data_loader = utilities.load_data('test')
     nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
 
     #########
@@ -136,7 +140,7 @@ def model_a(load_vae=False, load_mdn=False):
         input_feats = batch_feats.cuda()
 
         mdn_gmm_params = mdn(input_feats)
-        gmm_mu, gmm_pi = utils.get_gmm_coeffs(mdn_gmm_params)
+        gmm_mu, gmm_pi = utilities.get_gmm_coeffs(mdn_gmm_params)
         gmm_pi = gmm_pi.view(-1, 1)
         gmm_mu = gmm_mu.reshape(-1, conf.HIDDENSIZE)
 
@@ -181,7 +185,7 @@ def model_b(load_cvae=False):
     # LOAD TRAINING DATA
     ####################
 
-    data, data_loader = utils.load_data('train')
+    data, data_loader = utilities.load_data('train')
     nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
 
     ##############
@@ -208,7 +212,7 @@ def model_b(load_cvae=False):
                 optimizer.zero_grad()
                 color_out = cvae(color=input_color, greylevel=input_greylevel)
                 # fancy LOSS Calculation
-                recon_loss, recon_loss_l2 = utils.cvae_loss(
+                recon_loss, recon_loss_l2 = utilities.cvae_loss(
                     color_out,
                     input_color,
                     lossweights,
@@ -225,7 +229,7 @@ def model_b(load_cvae=False):
     # LOAD TESTING DATA
     ###################
 
-    data, data_loader = utils.load_data('test')
+    data, data_loader = utilities.load_data('test')
     nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
 
     #########

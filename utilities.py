@@ -57,8 +57,7 @@ def grad_loss(gt, pred):
     # reshape the filter and compute the conv
     Sy = Sy.view((1, 1, 3, 3)).repeat(1, 2, 1, 1)
     G_y = F.conv2d(pred, Sy, padding=1)
-    # lui non fa proprio così
-    G = torch.sqrt(torch.pow(G_x, 2) + torch.pow(G_y, 2))
+    G = torch.pow(G_x, 2) + torch.pow(G_y, 2)
     return torch.mean(G)
 
 
@@ -111,10 +110,10 @@ def vae_loss(mu, logvar, pred, gt, lossweights):
     """
     kl = kl_loss(mu, logvar)
     recon_loss = hist_loss(gt, pred, lossweights)
-    recon_loss_l2 = l2_loss(gt, pred)
+    # recon_loss_l2 = l2_loss(gt, pred)
     mah = mah_loss(gt, pred)
     grad = grad_loss(gt, pred)
-    return kl, recon_loss, recon_loss_l2, mah, grad
+    return kl, recon_loss, grad, mah
 
 
 def cvae_loss(pred, gt, lossweights):
