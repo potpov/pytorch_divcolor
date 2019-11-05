@@ -121,54 +121,41 @@ def model_a(load_vae=False, load_mdn=False):
             scheduler.step()
         print("MDN training completed. starting testing.")
 
-    ###################
-    # LOAD TESTING DATA
-    ###################
 
     data, data_loader = utilities.load_data('test')
     nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
 
-    #########
-    # TESTING
-    #########
+    ###################
+    # TESTING VAE + MDN
+    ###################
+
 
     mdn.train(False)
     for batch_idx, (batch, batch_recon_const, batch_weights,
                     batch_recon_const_outres, batch_feats) in \
             tqdm(enumerate(data_loader), total=nbatches):
 
-        input_feats = batch_feats.cuda()
+        input_feats = batch_feats.cuda()  # grey image
 
         mdn_gmm_params = mdn(input_feats)
         gmm_mu, gmm_pi = utilities.get_gmm_coeffs(mdn_gmm_params)
-        gmm_pi = gmm_pi.view(-1, 1)
-        gmm_mu = gmm_mu.reshape(-1, conf.HIDDENSIZE)
-
-        for j in range(conf.BATCHSIZE):
-            batch_j = np.tile(batch[j, ...].numpy(), (conf.BATCHSIZE, 1, 1, 1))
-            batch_recon_const_j = np.tile(batch_recon_const[j, ...].numpy(), (conf.BATCHSIZE, 1, 1, 1))
-            batch_recon_const_outres_j = np.tile(batch_recon_const_outres[j, ...].numpy(),
-                                                 (conf.BATCHSIZE, 1, 1, 1))
-
-            input_color = torch.from_numpy(batch_j).cuda()
-            input_greylevel = torch.from_numpy(batch_recon_const_j).cuda()
-
-            curr_mu = gmm_mu[j*conf.NMIX:(j+1)*conf.NMIX, :]
-            orderid = np.argsort(
-                gmm_pi[j*conf.NMIX:(j+1)*conf.NMIX, 0].cpu().data.numpy().reshape(-1))
-
-            z = curr_mu.repeat(np.int((conf.BATCHSIZE*1.)/conf.NMIX), 1)
-
-            _, _, color_out = vae(color=None, z_in=z)
-
-            data.saveoutput_gt(color_out.cpu().data.numpy()[orderid, ...],
-                               batch_j[orderid, ...],
-                               'divcolor_%05d_%05d' % (batch_idx, j),
-                               conf.NMIX,
-                               net_recon_const=batch_recon_const_outres_j[orderid, ...])
-
-    print("VAE + MDN testing completed. check out the results in ", conf.OUT_DIR)
-    writer.close()
+        # creating indexes and ordering means according to the gaussian weights Pi
+        pi_indexes = gmm_pi.argsort(dim=1)
+        gmm_mu = gmm_mu.reshape(conf.BATCHSIZE, conf.NMIX, conf.HIDDENSIZE)
+        for i in range(conf.BATCHSIZE):
+            gmm_mu[i, ...] = gmm_mu[i, pi_indexes[i], ...]
+        # calculating results foreach sample
+        result = []
+        for mix in range(conf.NMIX):
+            _, _, color_out = vae(color=None, z_in=gmm_mu[:, mix, :])
+            result.append(color_out.unsqueeze(dim=1))
+        result = torch.cat(result, dim=1)  # concat over the num-mix dimension
+        data.dump_results(
+            color=result,  # batch of 8 predictions  for AB channels
+            grey=batch_recon_const,  # batch of original grey channel
+            gt=batch,  # batch of gt AB channels
+            name=batch_idx,
+        )
 
 
 def model_b(load_cvae=False):
@@ -188,12 +175,12 @@ def model_b(load_cvae=False):
     data, data_loader = utilities.load_data('train')
     nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
 
-    ##############
-    # TRAINING VAE
-    ##############
+    ###############
+    # TRAINING CVAE
+    ###############
 
     if load_cvae:
-        cvae.load_state_dict(torch.load(os.path.join(conf.OUT_DIR, 'models/model_mdn.pth')))
+        cvae.load_state_dict(torch.load(os.path.join(conf.OUT_DIR, 'models/model_cvae.pth')))
         print("weights for vae loaded.")
     else:
         print("starting CVAE Training for model B")
@@ -225,16 +212,12 @@ def model_b(load_cvae=False):
 
         print("CVAE training completed. starting test")
 
-    ###################
-    # LOAD TESTING DATA
-    ###################
+    ##############
+    # TESTING CVAE
+    ##############
 
     data, data_loader = utilities.load_data('test')
     nbatches = np.int_(np.floor(data.img_num / conf.BATCHSIZE))
-
-    #########
-    # TESTING
-    #########
 
     cvae.train(False)
     for batch_idx, (batch, batch_recon_const, batch_weights,
@@ -247,13 +230,12 @@ def model_b(load_cvae=False):
 
         color_out = cvae(color=None, greylevel=input_greylevel)
 
-        data.saveoutput_gt(
-            color_out.cpu().data.numpy(),
-            batch.numpy(),  # grand truth in batch
-            'divcolor_%05d' % (batch_idx),  # output name
-            conf.BATCHSIZE,  # batch size (set to one because we are already looping over the batch)
-            5,  # number of column
-            batch_recon_const_outres.numpy()  # black and white gt
+        data.dump_results(
+            color=color_out,  # batch of 8 predictions  for AB channels
+            grey=batch_recon_const,  # batch of original grey channel
+            gt=batch,  # batch of gt AB channels
+            name=batch_idx,
+            nmix=1,
         )
 
     print("CVAE testing completed. check out the results in ", conf.OUT_DIR)

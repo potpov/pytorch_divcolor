@@ -24,3 +24,9 @@ KL_W = 1e-2  # starts around e4     1e-2
 MAH_W = 1e-2  # starts around e6     1e-2
 HIST_W = 1   # starts around 1
 GRA_W = 1e1  # starts around e-2   1e1
+
+
+IMG_W = 64
+IMG_H = 64
+SCALED_W = 64
+SCALED_H = 64

@@ -1,8 +1,9 @@
 import cv2
 import numpy as np
-
+import conf
+import torch
 from torch.utils.data import Dataset
-
+import torch.nn.functional as F
 
 class colordata(Dataset):
 
@@ -86,56 +87,54 @@ class colordata(Dataset):
         img_lossweights[1, :, :] = binweights.reshape(self.shape[0], self.shape[1])
         return img_lossweights
 
-    def saveoutput_gt(self, net_op, gt, prefix, batch_size, num_cols=8, net_recon_const=None):
-
-        # generating net image section
-        net_out_img = self.__tiledoutput__(
-            net_op,  # net results
-            batch_size,  # iterating over the batch?
-            num_cols=num_cols,  # number of net results
-            net_recon_const=net_recon_const  # what the fuck is this ?!
-        )
-        # creating grandtruth section
-        gt_out_img = self.__tiledoutput__(
-            gt,
-            batch_size,
-            num_cols=num_cols,
-            net_recon_const=net_recon_const
-        )
-        # creating separator
-        num_rows = np.int_(np.ceil((batch_size * 1.) / num_cols))
-        border_img = 255 * np.ones((num_rows * self.outshape[0], 128, 3), dtype='uint8')
-        # printing everything as an image
-        out_fn_pred = '%s/%s.png' % (self.out_directory, prefix)
-        cv2.imwrite(out_fn_pred, np.concatenate((net_out_img, border_img, gt_out_img), axis=1))
-
-    def __tiledoutput__(self, net_op, batch_size, num_cols=8, net_recon_const=None):
-
-        num_rows = np.int_(np.ceil((batch_size * 1.) / num_cols))
-        out_img = np.zeros((num_rows * self.outshape[0], num_cols * self.outshape[1], 3), dtype='uint8')
-        img_lab = np.zeros((self.outshape[0], self.outshape[1], 3), dtype='uint8')
-        c = 0
-        r = 0
-
-        for i in range(batch_size):
-            if i % num_cols == 0 and i > 0:
-                r = r + 1
-                c = 0
-            img_lab[..., 0] = self.__decodeimg__(net_recon_const[i, 0, :, :].reshape(
-                self.outshape[0], self.outshape[1]))
-            img_lab[..., 1] = self.__decodeimg__(net_op[i, 0, :, :].reshape(
-                self.shape[0], self.shape[1]))
-            img_lab[..., 2] = self.__decodeimg__(net_op[i, 1, :, :].reshape(
-                self.shape[0], self.shape[1]))
-            img_rgb = cv2.cvtColor(img_lab, cv2.COLOR_LAB2BGR)
-            out_img[r * self.outshape[0]:(r + 1) * self.outshape[0],
-            c * self.outshape[1]:(c + 1) * self.outshape[1], ...] = img_rgb
-            c = c + 1
-
-        return out_img
-
-    def __decodeimg__(self, img_enc):
+    def restore(self, img_enc):
+        """
+        perform conversion to RGB
+        :param img_enc: CIELAB channels
+        :return: RGB conversion
+        """
         img_dec = (((img_enc + 1.) * 1.) / 2.) * 255.
         img_dec[img_dec < 0.] = 0.
         img_dec[img_dec > 255.] = 255.
-        return cv2.resize(np.uint8(img_dec), (self.outshape[0], self.outshape[1]))
+        return img_dec.type(torch.uint8)
+
+    def dump_results(self, color, grey, gt, nmix=conf.NMIX, name='result'):
+        """
+        :param color: network output 32x(8)x2x64x64
+        :param grey: grey input 32x64x64
+        :param gt: original image  32x2x64x64
+        :param nmix: number of samples from the mdn
+        :param name: output name for this file
+        """
+
+        # here we print the output image for the entire batch (in pieces)
+        net_result = np.zeros((conf.BATCHSIZE * conf.IMG_H, nmix * conf.IMG_W, 3), dtype='uint8')
+        border_img = 255 * np.ones((conf.BATCHSIZE * conf.IMG_H, 128, 3), dtype='uint8')  # border
+
+        # restoring previous shapes and formats
+        # color = (F.interpolate(color, size=(2, conf.IMG_H, conf.IMG_W)))
+        # grey = (F.interpolate(grey, size=(conf.IMG_H, conf.IMG_W)))
+        # gt = (F.interpolate(gt, size=(conf.IMG_H, conf.IMG_W)))
+
+        # swap axes and reshape layers to fit output image
+        grey = grey.reshape((conf.BATCHSIZE * conf.IMG_H, conf.IMG_W))
+
+        if nmix != 1:  # CVAE case where we haven't multiple samplings
+            color = color.permute((0, 3, 1, 4, 2))
+        else:
+            color = color.permute((0, 2, 3, 1))
+
+        color = color.reshape((conf.BATCHSIZE * conf.IMG_H, nmix * conf.IMG_W, 2))
+
+        gt = gt.permute((0, 2, 3, 1))
+        gt = gt.reshape((conf.BATCHSIZE * conf.IMG_H, conf.IMG_W, 2))
+
+        gt_print = cv2.merge((self.restore(grey).data.numpy(), self.restore(gt).data.numpy()))
+        net_result[:, :, 0] = self.restore(grey.repeat((1, nmix)))
+        net_result[:, :, 1:3] = self.restore(color).cpu()
+        net_result = cv2.cvtColor(net_result, cv2.COLOR_LAB2BGR)
+        gt_print = cv2.cvtColor(gt_print, cv2.COLOR_LAB2BGR)
+
+        out_fn_pred = '%s/%s.png' % (self.out_directory, name)
+        cv2.imwrite(out_fn_pred, np.concatenate((net_result, border_img, gt_print), axis=1))
+        return
