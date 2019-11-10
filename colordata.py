@@ -1,31 +1,26 @@
 import cv2
 import numpy as np
-import conf
 import torch
 from torch.utils.data import Dataset
-import torch.nn.functional as F
 
-class colordata(Dataset):
 
-    def __init__(self, out_directory, listdir=None, featslistdir=None, shape=(64, 64),
-                 subdir=False, ext='JPEG', outshape=(256, 256), split='train'):
+class Colordata(Dataset):
+
+    def __init__(self, out_directory, conf, listdir=None, shape=(64, 64), outshape=(256, 256), split='train'):
 
         self.img_fns = []
-        self.feats_fns = []
-
+        self.conf = conf
+        
         with open('%s/list.%s.vae.txt' % (listdir, split), 'r') as ftr:
             for img_fn in ftr:
                 self.img_fns.append(img_fn.strip('\n'))
 
-        with open('%s/list.%s.txt' % (featslistdir, split), 'r') as ftr:
-            for feats_fn in ftr:
-                self.feats_fns.append(feats_fn.strip('\n'))
-
-        self.img_num = min(len(self.img_fns), len(self.feats_fns))
+        self.img_num = len(self.img_fns)
         self.shape = shape
         self.outshape = outshape
         self.out_directory = out_directory
 
+        # histogram weights
         self.lossweights = None
         countbins = 1. / np.load('data/zhang_weights/prior_probs.npy')
         binedges = np.load('data/zhang_weights/ab_quantize.npy').reshape(2, 313)
@@ -43,34 +38,34 @@ class colordata(Dataset):
     def __getitem__(self, idx):
         color_ab = np.zeros((2, self.shape[0], self.shape[1]), dtype='f')
         weights = np.ones((2, self.shape[0], self.shape[1]), dtype='f')
-        recon_const = np.zeros((1, self.shape[0], self.shape[1]), dtype='f')
-        recon_const_outres = np.zeros((1, self.outshape[0], self.outshape[1]), dtype='f')
-        greyfeats = np.zeros((512, 28, 28), dtype='f')
+        grey_little = np.zeros((1, self.shape[0], self.shape[1]), dtype='f')
+        grey_big = np.zeros((1, self.outshape[0], self.outshape[1]), dtype='f')
+        grey_cropped = np.zeros((1, 224, 224), dtype='f')
 
-        img_large = cv2.imread(self.img_fns[idx])
-        if self.shape is not None:
-            img = cv2.resize(img_large, (self.shape[0], self.shape[1]))
-            img_outres = cv2.resize(img_large, (self.outshape[0], self.outshape[1]))
-
+        # converting original image to CIELAB
+        img = cv2.imread(self.img_fns[idx])
         img_lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-        img_lab_outres = cv2.cvtColor(img_outres, cv2.COLOR_BGR2LAB)
-
         img_lab = ((img_lab * 2.) / 255.) - 1.
-        img_lab_outres = ((img_lab_outres * 2.) / 255.) - 1.
 
-        recon_const[0, :, :] = img_lab[..., 0]
-        recon_const_outres[0, :, :] = img_lab_outres[..., 0]
+        # creating scaled versions of the image
+        img_big = cv2.resize(img_lab, (self.outshape[0], self.outshape[0]))
+        img_little = cv2.resize(img_lab, (self.conf['SCALED_W'], self.conf['SCALED_H']))
+        img_cropped = cv2.resize(img_lab, (224, 224))
 
-        color_ab[0, :, :] = img_lab[..., 1].reshape(1, self.shape[0], self.shape[1])
-        color_ab[1, :, :] = img_lab[..., 2].reshape(1, self.shape[0], self.shape[1])
+        # copying grey scale layers
+        grey_cropped[0, :, :] = img_cropped[..., 0]
+        grey_little[0, :, :] = img_little[..., 0]
+        grey_big[0, :, :] = img_big[..., 0]
 
+        # copying color layers
+        color_ab[0, :, :] = img_little[..., 1].reshape(1, self.shape[0], self.shape[1])
+        color_ab[1, :, :] = img_little[..., 2].reshape(1, self.shape[0], self.shape[1])
+
+        # loading hist weights
         if self.lossweights is not None:
             weights = self.__getweights__(color_ab)
 
-        featobj = np.load(self.feats_fns[idx])
-        greyfeats[:, :, :] = featobj['arr_0']
-
-        return color_ab, recon_const, weights, recon_const_outres, greyfeats
+        return color_ab, grey_little, weights, grey_big, grey_cropped
 
     def __getweights__(self, img):
         img_vec = img.reshape(-1)
@@ -98,7 +93,7 @@ class colordata(Dataset):
         img_dec[img_dec > 255.] = 255.
         return img_dec.type(torch.uint8)
 
-    def dump_results(self, color, grey, gt, nmix=conf.NMIX, name='result'):
+    def dump_results(self, color, grey, gt, nmix, name='result'):
         """
         :param color: network output 32x(8)x2x64x64
         :param grey: grey input 32x64x64
@@ -108,26 +103,26 @@ class colordata(Dataset):
         """
 
         # here we print the output image for the entire batch (in pieces)
-        net_result = np.zeros((conf.BATCHSIZE * conf.IMG_H, nmix * conf.IMG_W, 3), dtype='uint8')
-        border_img = 255 * np.ones((conf.BATCHSIZE * conf.IMG_H, 128, 3), dtype='uint8')  # border
+        net_result = np.zeros((self.conf['BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 3), dtype='uint8')
+        border_img = 255 * np.ones((self.conf['BATCHSIZE'] * self.conf['IMG_H'], 128, 3), dtype='uint8')  # border
 
         # restoring previous shapes and formats
-        # color = (F.interpolate(color, size=(2, conf.IMG_H, conf.IMG_W)))
-        # grey = (F.interpolate(grey, size=(conf.IMG_H, conf.IMG_W)))
-        # gt = (F.interpolate(gt, size=(conf.IMG_H, conf.IMG_W)))
+        # color = (F.interpolate(color, size=(2, self.conf['IMG_H'], self.conf['IMG_W'])))
+        # grey = (F.interpolate(grey, size=(self.conf['IMG_H'], self.conf['IMG_W'])))
+        # gt = (F.interpolate(gt, size=(self.conf['IMG_H'], self.conf['IMG_W'])))
 
         # swap axes and reshape layers to fit output image
-        grey = grey.reshape((conf.BATCHSIZE * conf.IMG_H, conf.IMG_W))
+        grey = grey.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W']))
 
         if nmix != 1:  # CVAE case where we haven't multiple samplings
             color = color.permute((0, 3, 1, 4, 2))
         else:
             color = color.permute((0, 2, 3, 1))
 
-        color = color.reshape((conf.BATCHSIZE * conf.IMG_H, nmix * conf.IMG_W, 2))
+        color = color.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 2))
 
         gt = gt.permute((0, 2, 3, 1))
-        gt = gt.reshape((conf.BATCHSIZE * conf.IMG_H, conf.IMG_W, 2))
+        gt = gt.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W'], 2))
 
         gt_print = cv2.merge((self.restore(grey).data.numpy(), self.restore(gt).data.numpy()))
         net_result[:, :, 0] = self.restore(grey.repeat((1, nmix)))

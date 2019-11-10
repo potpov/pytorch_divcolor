@@ -1,15 +1,15 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import conf
 
 
 class CVAE(nn.Module):
 
     # define layers
-    def __init__(self):
+    def __init__(self, conf):
         super(CVAE, self).__init__()
-        self.hidden_size = 64
+        self.hidden_size = conf['HIDDENSIZE']
+        self.batch_size = conf['BATCHSIZE']
 
         # Encoder layers
         self.enc_conv1 = nn.Conv2d(2, 128, 5, stride=2, padding=2)
@@ -34,7 +34,7 @@ class CVAE(nn.Module):
 
         # Decoder layers
         self.dec_upsamp1 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-        self.dec_conv1 = nn.Conv2d(512 + conf.HIDDENSIZE, 256, 5, stride=1, padding=2)  # 512 (skips) + z (color emb)
+        self.dec_conv1 = nn.Conv2d(512 + self.hidden_size, 256, 5, stride=1, padding=2)  # 512 (skips) + z (color emb)
         self.dec_bn1 = nn.BatchNorm2d(256)
         self.dec_upsamp2 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         self.dec_conv2 = nn.Conv2d(256 * 2, 128, 5, stride=1, padding=2)  # 256 (out) + 256 (skips)
@@ -106,11 +106,11 @@ class CVAE(nn.Module):
             stddev = torch.sqrt(torch.exp(logvar))
             eps = torch.randn(stddev.size()).normal_().cuda()
             z_color = torch.add(mu, torch.mul(eps, stddev))
-            z_color = z_color.reshape(-1, conf.HIDDENSIZE, 1, 1).repeat(1, 1, 4, 4)
+            z_color = z_color.reshape(-1, self.hidden_size, 1, 1).repeat(1, 1, 4, 4)
             z = z_grey * z_color
         else:
             # z1 is random, we don't have color input on testing!
-            z_rand = torch.randn(conf.BATCHSIZE, conf.HIDDENSIZE, 1, 1).repeat(1, 1, 4, 4).cuda()
+            z_rand = torch.randn(self.batch_size, self.hidden_size, 1, 1).repeat(1, 1, 4, 4).cuda()
             z = z_grey * z_rand
 
         return self.decoder(z, sc_feat32, sc_feat16, sc_feat8)
