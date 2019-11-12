@@ -3,17 +3,19 @@ import models
 from utilities import Utilities
 
 if __name__ == '__main__':
-    # None for new experiment, string or list of strings of folder to load experiments
-    config_dirs = [
-        '2019-11-08_12:12:18',
-        '2019-11-08_12:12:17'
-    ]
 
-    if len(config_dirs) > 0:
+    # None for new experiment, string or list of strings of folders to load experiments
+    config_dirs = {
+        'bigearth': '2019-11-12_18:25:41.518313',
+        # 'lfw': '2019-11-12_15:45:51.574263',
+    }
+    # config_dirs = None
+
+    if config_dirs is not None and len(config_dirs) > 0:
         # load experiments
-        for config_dir in config_dirs:
-            print("starting experiment for file {}".format(config_dir))
-            utilities = Utilities(config_dir)
+        for dataset, dir in config_dirs.items():
+            print("starting experiment for file {}".format(dir))
+            utilities = Utilities(dir, dataset)
             models.model(utilities)
     # one config or new experiment
     else:

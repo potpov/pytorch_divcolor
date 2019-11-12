@@ -1,29 +1,29 @@
 import cv2
 import numpy as np
-import torch
 from torch.utils.data import Dataset
+import os
 
 
 class Colordata(Dataset):
 
-    def __init__(self, out_directory, conf, listdir=None, shape=(64, 64), outshape=(256, 256), split='train'):
+    def __init__(self, conf, shape=(64, 64), outshape=(256, 256), split='train'):
 
         self.img_fns = []
         self.conf = conf
-        
-        with open('%s/list.%s.vae.txt' % (listdir, split), 'r') as ftr:
+        self.curr_dir = os.path.dirname(__file__)
+
+        with open(os.path.join(self.curr_dir, f'list.{split}.vae.txt'), 'r') as ftr:
             for img_fn in ftr:
                 self.img_fns.append(img_fn.strip('\n'))
 
         self.img_num = len(self.img_fns)
         self.shape = shape
         self.outshape = outshape
-        self.out_directory = out_directory
 
         # histogram weights
         self.lossweights = None
-        countbins = 1. / np.load('data/zhang_weights/prior_probs.npy')
-        binedges = np.load('data/zhang_weights/ab_quantize.npy').reshape(2, 313)
+        countbins = 1. / np.load(os.path.join(self.curr_dir, 'zhang_weights/prior_probs.npy'))
+        binedges = np.load(os.path.join(self.curr_dir, 'zhang_weights/ab_quantize.npy')).reshape(2, 313)
         lossweights = {}
         for i in range(313):
             if binedges[0, i] not in lossweights:
@@ -36,6 +36,15 @@ class Colordata(Dataset):
         return self.img_num
 
     def __getitem__(self, idx):
+        """
+        return set of images for the models
+        :param idx: batch id
+        :return: color_ab: AB color channels, shape 2x64x64
+        :return: grey_little: greyscale image, shape 1x64x64
+        :return: weights: set of weights for the color space
+        :return: grey_big: greyscale image, shape 1x256x256
+        :return: grey_cropped: greyscale cropped image, shape 1x224x224
+        """
         color_ab = np.zeros((2, self.shape[0], self.shape[1]), dtype='f')
         weights = np.ones((2, self.shape[0], self.shape[1]), dtype='f')
         grey_little = np.zeros((1, self.shape[0], self.shape[1]), dtype='f')
@@ -43,7 +52,7 @@ class Colordata(Dataset):
         grey_cropped = np.zeros((1, 224, 224), dtype='f')
 
         # converting original image to CIELAB
-        img = cv2.imread(self.img_fns[idx])
+        img = cv2.imread(os.path.join(self.curr_dir, self.img_fns[idx]))
         img_lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
         img_lab = ((img_lab * 2.) / 255.) - 1.
 
@@ -81,55 +90,3 @@ class Colordata(Dataset):
         img_lossweights[0, :, :] = binweights.reshape(self.shape[0], self.shape[1])
         img_lossweights[1, :, :] = binweights.reshape(self.shape[0], self.shape[1])
         return img_lossweights
-
-    def restore(self, img_enc):
-        """
-        perform conversion to RGB
-        :param img_enc: CIELAB channels
-        :return: RGB conversion
-        """
-        img_dec = (((img_enc + 1.) * 1.) / 2.) * 255.
-        img_dec[img_dec < 0.] = 0.
-        img_dec[img_dec > 255.] = 255.
-        return img_dec.type(torch.uint8)
-
-    def dump_results(self, color, grey, gt, nmix, name='result'):
-        """
-        :param color: network output 32x(8)x2x64x64
-        :param grey: grey input 32x64x64
-        :param gt: original image  32x2x64x64
-        :param nmix: number of samples from the mdn
-        :param name: output name for this file
-        """
-
-        # here we print the output image for the entire batch (in pieces)
-        net_result = np.zeros((self.conf['BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 3), dtype='uint8')
-        border_img = 255 * np.ones((self.conf['BATCHSIZE'] * self.conf['IMG_H'], 128, 3), dtype='uint8')  # border
-
-        # restoring previous shapes and formats
-        # color = (F.interpolate(color, size=(2, self.conf['IMG_H'], self.conf['IMG_W'])))
-        # grey = (F.interpolate(grey, size=(self.conf['IMG_H'], self.conf['IMG_W'])))
-        # gt = (F.interpolate(gt, size=(self.conf['IMG_H'], self.conf['IMG_W'])))
-
-        # swap axes and reshape layers to fit output image
-        grey = grey.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W']))
-
-        if nmix != 1:  # CVAE case where we haven't multiple samplings
-            color = color.permute((0, 3, 1, 4, 2))
-        else:
-            color = color.permute((0, 2, 3, 1))
-
-        color = color.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 2))
-
-        gt = gt.permute((0, 2, 3, 1))
-        gt = gt.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W'], 2))
-
-        gt_print = cv2.merge((self.restore(grey).data.numpy(), self.restore(gt).data.numpy()))
-        net_result[:, :, 0] = self.restore(grey.repeat((1, nmix)))
-        net_result[:, :, 1:3] = self.restore(color).cpu()
-        net_result = cv2.cvtColor(net_result, cv2.COLOR_LAB2BGR)
-        gt_print = cv2.cvtColor(gt_print, cv2.COLOR_LAB2BGR)
-
-        out_fn_pred = '%s/%s.png' % (self.out_directory, name)
-        cv2.imwrite(out_fn_pred, np.concatenate((net_result, border_img, gt_print), axis=1))
-        return

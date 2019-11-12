@@ -1,6 +1,8 @@
 
 default_conf = {
 
+    'DATASET_NAME': 'bigearth',  # bigearth, lfw, ...
+
     'TRAIN_MDN': True,  # if train of mdn has to be performed
     'TRAIN_VAE': True,  # if train of vae has to be performed
     'LOAD_MDN': False,  # if existing weights has to be loaded
@@ -11,9 +13,10 @@ default_conf = {
     'TRAIN_CVAE': True,
     'TEST_CVAE': True,
 
-    'OUT_DIR': 'data/output/lfw/',
-    'LISTDIR': 'data/imglist/lfw/',  # list of input image names
-    'MODEL_DIR': 'data/output/lfw/models/',  # weights dir
+    'OUT_DIR': 'tests/',
+
+    'SEED': 42,
+    "TEST_SPLIT": 0.2,
 
     'NTHREADS': 8,  # data-loader workers
     'HIDDENSIZE': 64,  # encoder and mdn output size
@@ -28,7 +31,7 @@ default_conf = {
     'SCHED_MDN_STEP': 5,
     'SCHED_MDN_GAMMA': 0.1,
 
-    'PCA_DIR': 'data/pcomp/lfw',
+    'PCA_DIR': 'assets/pcomp/lfw',
     'PCA_COMP_NUMBER': 20,
 
     # weights for the losses

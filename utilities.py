@@ -1,17 +1,19 @@
 from conf import default_conf
-import torch
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from colordata import Colordata
+from datasets.bigearth.bigearth_dataset import BigEarthDataset
+from datasets.lfw.lfw_dataset import Colordata
+from torch.utils.data import SubsetRandomSampler
 import os
-import numpy as np
 import datetime
 import json
+import torch
+import cv2
+import numpy as np
 
 
 class Utilities:
 
-    def __init__(self, load_dir=None):
+    def __init__(self, load_dir=None, dataset_name=default_conf['DATASET_NAME']):
         """
         loading config file from json file or
         creating a new experiment from the current default configuration
@@ -19,11 +21,10 @@ class Utilities:
         :param load_dir: name of the folder in the experiment dir
         :return: new experiment dir or loaded experiment dir
         """
-        if not load_dir:
-            # CREATING NEW EXPERIMENT
+        if not load_dir:  # NEW EXPERIMENT
             # generating unique name for the experiment folder
             datalog = str(datetime.datetime.now()).replace(' ', '_')
-            save_dir = os.path.join(default_conf['OUT_DIR'], datalog)
+            save_dir = os.path.join(default_conf['OUT_DIR'], dataset_name, datalog)
 
             # creating folders for model, config and results
             os.mkdir(save_dir)
@@ -35,180 +36,120 @@ class Utilities:
             # dump configuration file
             with open(os.path.join(save_dir, 'config.json'), "w") as write_file:
                 json.dump(default_conf, write_file, indent=4)
+
+            # saving class attributes
             self.save_dir = save_dir
             self.conf = default_conf
+            self.dataset_name = dataset_name
 
-        else:
-            # LOADING PREVIOUS EXPERIMENT
-            with open(os.path.join(default_conf['OUT_DIR'], load_dir, 'config.json'), 'r') as handle:
+        else:  # LOADING PREVIOUS EXPERIMENT
+            save_dir = os.path.join(default_conf['OUT_DIR'], dataset_name, load_dir)
+
+            # loading config file from json
+            with open(os.path.join(save_dir, 'config.json'), 'r') as handle:
                 config = json.load(handle)
-            self.save_dir = os.path.join(default_conf['OUT_DIR'], load_dir)
+
             # create results folder if does not exists
-            if config['TEST_MDN_VAE'] and not os.path.isdir(os.path.join(self.save_dir, 'results_mdn')):
-                os.mkdir(os.path.join(self.save_dir, 'results_mdn'))
-            if config['TEST_CVAE'] and not os.path.isdir(os.path.join(self.save_dir, 'results_cvae')):
-                os.mkdir(os.path.join(self.save_dir, 'results_cvae'))
+            if config['TEST_MDN_VAE'] and not os.path.isdir(os.path.join(save_dir, 'results_mdn')):
+                os.mkdir(os.path.join(save_dir, 'results_mdn'))
+            if config['TEST_CVAE'] and not os.path.isdir(os.path.join(save_dir, 'results_cvae')):
+                os.mkdir(os.path.join(save_dir, 'results_cvae'))
 
+            # saving class attributes
+            self.save_dir = save_dir
             self.conf = config
+            self.dataset_name = dataset_name
 
-    def mah_loss(self, gt, pred):
+    def load_data(self, split):
         """
-        load pca vals and variance from file
-        :param gt: original color space
-        :param pred: predicted color space
-        :return: Mahalanobis distance as described in the paper
+        generate dataloader according to the dataset
+        :param split: {train|test}
+        :return: pytorch dataloader object
         """
-        np_pcvec = np.transpose(np.load(os.path.join(self.conf['PCA_DIR'], 'components.mat.npy')))
-        np_pcvar = 1. / np.load(os.path.join(self.conf['PCA_DIR'], 'exp_variance.mat.npy'))
-        pcvec = torch.from_numpy(np_pcvec[:, :self.conf['PCA_COMP_NUMBER']]).cuda()
-        pcvar = torch.from_numpy(np_pcvar[:self.conf['PCA_COMP_NUMBER']]).cuda()
+        # BIG EARTH DATA LOADER
+        if self.dataset_name == 'bigearth':
+            big_earth = BigEarthDataset('big_earth_3000.csv', 'quantiles_3000.json', 42)
+            train_idx, test_idx = big_earth.split_dataset(0.2)
+            if split == 'train':
+                sampler = SubsetRandomSampler(train_idx)
+            else:
+                sampler = SubsetRandomSampler(test_idx)
 
-        proj_gt = torch.mm(gt.reshape(32, -1), pcvec)
-        proj_pred = torch.mm(pred.reshape(32, -1), pcvec)
-        pca_loss = torch.mean(
-            torch.sum(
-                (proj_gt - proj_pred)**2 / pcvar, dim=1
+            data_loader = torch.utils.data.DataLoader(
+                    big_earth,
+                    batch_size=self.conf['BATCHSIZE'],
+                    sampler=sampler,
+                    num_workers=self.conf['NTHREADS'],
+                    drop_last=True
+                )
+            return data_loader
+        # LFW DATA LOADER
+        elif self.dataset_name == 'lfw':
+            data = Colordata(
+                self.conf,
+                split=split
             )
-        )
 
-        # calculating residuals. by subtracting each PCA component to the original image
-        gt_err = gt
-        pred_err = pred
-        for i in range(self.conf['PCA_COMP_NUMBER']):
-            gt_err = gt_err.reshape(32, -1) - torch.mm(torch.mm(gt.reshape(32, -1), pcvec), torch.t(pcvec))
-            pred_err = pred_err.reshape(32, -1) - torch.mm(torch.mm(pred.reshape(32, -1), pcvec), torch.t(pcvec))
-        res_loss = torch.mean(
-            torch.sum(
-                (gt_err - pred_err) ** 2 / (pcvar[self.conf['PCA_COMP_NUMBER'] - 1] ** 2), dim=1
+            data_loader = DataLoader(
+                dataset=data,
+                num_workers=self.conf['NTHREADS'],
+                batch_size=self.conf['BATCHSIZE'],
+                shuffle=True,
+                drop_last=True
             )
-        )
-        return pca_loss + res_loss
+            return data_loader
+        # ERROR
+        else:
+            raise Exception('dataset not valid')
 
-    def grad_loss(self, gt, pred):
-        # Horinzontal Sobel filter
-        Sx = torch.Tensor([[-1, 0, 1],
-                           [-2, 0, 2],
-                           [-1, 0, 1]]).cuda()
-        # reshape the filter and compute the conv
-        Sx = Sx.view((1, 1, 3, 3)).repeat(1, 2, 1, 1)
-        G_x = F.conv2d(gt, Sx, padding=1)
-
-        # Vertical Sobel filter
-        Sy = torch.Tensor([[1, 2, 1],
-                           [0, 0, 0],
-                           [-1, -2, -1]]).cuda()
-        # reshape the filter and compute the conv
-        Sy = Sy.view((1, 1, 3, 3)).repeat(1, 2, 1, 1)
-        G_y = F.conv2d(pred, Sy, padding=1)
-        G = torch.pow(G_x, 2) + torch.pow(G_y, 2)
-        return torch.mean(G)
-
-    def kl_loss(self, mu, logvar):
+    def restore(self, img_enc):
         """
-        calculate the Kullback–Leibler distance between the predicted distribution
-        and the normal N(0, I)
-        :param mu: predicted mean
-        :param logvar: predicted log(variance)
-        :return: kl distance
+        perform conversion to RGB
+        :param img_enc: CIELAB channels
+        :return: RGB conversion
         """
-        kl_element = torch.add(torch.add(torch.add(mu.pow(2), logvar.exp()), -1), logvar.mul(-1))
-        return torch.sum(kl_element).mul(.5)
+        # img_dec = (((img_enc + 1.) * 1.) / 2.) * 255.
+        img_dec = img_enc
+        img_dec[img_dec < 0.] = 0.
+        img_dec[img_dec > 255.] = 255.
+        return img_dec.type(torch.uint8)
 
-    def hist_loss(self, gt, pred, w):
+    def dump_results(self, color, grey, gt, nmix, model_name, file_name='result'):
         """
-        calculate the loss by computing the pixelwise distance between the predicted
-        color image and the gran truth color image
-        :param gt: original color image (AB space)
-        :param pred: predicted color image
-        :return: loss, weighted according to the probability of each color
+        :param color: network output 32x(8)x2x64x64
+        :param grey: grey input 32x64x64
+        :param gt: original image  32x2x64x64
+        :param nmix: number of samples from the mdn
+        :param name: output name for this file
         """
-        gt = gt.view(-1, 64 * 64 * 2)
-        pred = pred.view(-1, 64 * 64 * 2)
-        recon_element = torch.sqrt(torch.sum(torch.mul(torch.add(gt, pred.mul(-1)).pow(2), w), 1))
-        return torch.sum(recon_element).mul(1. / self.conf['BATCHSIZE'])
 
-    def l2_loss(self, gt, pred):
-        """
-        simple L2 loss between colored image and predicted colored image without any weight
-        :param gt: original colored image (AB channels)
-        :param pred: predicted colored image (AB channels)
-        :return: L2 loss
-        """
-        recon_element_l2 = torch.sqrt(torch.sum(torch.add(gt, pred.mul(-1)).pow(2), 1))
-        return torch.sum(recon_element_l2).mul(1. / self.conf['BATCHSIZE'])
+        # here we print the output image for the entire batch (in pieces)
+        net_result = np.zeros((self.conf['BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 3), dtype='uint8')
+        border_img = 255 * np.ones((self.conf['BATCHSIZE'] * self.conf['IMG_H'], 128, 3), dtype='uint8')  # border
 
-    def vae_loss(self, mu, logvar, pred, gt, lossweights):
-        """
-        loss for the variational autoencoder
-        :param mu: predicted mean
-        :param logvar: predicted logarithm of the variance
-        :param pred: predicted color image
-        :param gt: real color image
-        :param lossweights: weight of the colors
-        :return: sum of losses
-        """
-        kl = self.kl_loss(mu, logvar)
-        recon_loss = self.hist_loss(gt, pred, lossweights)
-        # recon_loss_l2 = l2_loss(gt, pred)
-        mah = self.mah_loss(gt, pred)
-        grad = self.grad_loss(gt, pred)
-        return kl, recon_loss, grad, mah
+        # restoring previous shapes and formats
+        # color = (F.interpolate(color, size=(2, self.conf['IMG_H'], self.conf['IMG_W'])))
+        # grey = (F.interpolate(grey, size=(self.conf['IMG_H'], self.conf['IMG_W'])))
+        # gt = (F.interpolate(gt, size=(self.conf['IMG_H'], self.conf['IMG_W'])))
 
-    def cvae_loss(self, pred, gt, lossweights):
-        """
-        this encoder loss is not forced to be normal gaussian
-        :param pred: predicted color image
-        :param gt: real color image
-        :param lossweights: weights for colors
-        :return:
-        """
-        recon_loss = self.hist_loss(gt, pred, lossweights)
-        recon_loss_l2 = self.l2_loss(gt, pred)
-        return recon_loss, recon_loss_l2
+        # swap axes and reshape layers to fit output image
+        grey = grey.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W']))
 
-    def get_gmm_coeffs(self, gmm_params):
-        """
-        return a set of means and weights for a mixture of gaussians
-        :param gmm_params: predicted embedding
-        :return: set of means and weights
-        """
-        gmm_mu = gmm_params[..., :self.conf['HIDDENSIZE'] * self.conf['NMIX']]
-        gmm_mu.contiguous()
-        gmm_pi_activ = gmm_params[..., self.conf['HIDDENSIZE'] * self.conf['NMIX']:]
-        gmm_pi_activ.contiguous()
-        gmm_pi = F.softmax(gmm_pi_activ, dim=1)
-        return gmm_mu, gmm_pi
+        if nmix != 1:  # CVAE case where we haven't multiple samplings
+            color = color.permute((0, 3, 1, 4, 2))
+        else:
+            color = color.permute((0, 2, 3, 1))
 
+        color = color.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 2))
 
-    def mdn_loss(self, gmm_params, mu, stddev, batchsize):
-        gmm_mu, gmm_pi = self.get_gmm_coeffs(gmm_params)
-        eps = torch.randn(stddev.size()).normal_().cuda()
-        z = torch.add(mu, torch.mul(eps, stddev))
-        z_flat = z.repeat(1, self.conf['NMIX'])
-        z_flat = z_flat.view(batchsize * self.conf['NMIX'], self.conf['HIDDENSIZE'])
-        gmm_mu_flat = gmm_mu.reshape(batchsize * self.conf['NMIX'], self.conf['HIDDENSIZE'])
-        dist_all = torch.sqrt(torch.sum(torch.add(z_flat, gmm_mu_flat.mul(-1)).pow(2).mul(50), 1))
-        dist_all = dist_all.view(batchsize, self.conf['NMIX'])
-        dist_min, selectids = torch.min(dist_all, 1)
-        gmm_pi_min = torch.gather(gmm_pi, 1, selectids.view(-1, 1))
-        gmm_loss = torch.mean(torch.add(-1*torch.log(gmm_pi_min+1e-30), dist_min))
-        gmm_loss_l2 = torch.mean(dist_min)
-        return gmm_loss, gmm_loss_l2
+        gt = gt.permute((0, 2, 3, 1))
+        gt = gt.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W'], 2))
 
-    def load_data(self, dataset_type, outdir):
-        data = Colordata(
-            outdir,
-            self.conf,
-            listdir=self.conf['LISTDIR'],
-            split=dataset_type
-        )
+        gt_print = cv2.merge((self.restore(grey).data.numpy(), self.restore(gt).data.numpy()))
+        net_result[:, :, 0] = self.restore(grey.repeat((1, nmix)))
+        net_result[:, :, 1:3] = self.restore(color).cpu()
+        net_result = cv2.cvtColor(net_result, cv2.COLOR_LAB2RGB)
+        gt_print = cv2.cvtColor(gt_print, cv2.COLOR_LAB2RGB)
 
-        data_loader = DataLoader(
-            dataset=data,
-            num_workers=self.conf['NTHREADS'],
-            batch_size=self.conf['BATCHSIZE'],
-            shuffle=True,
-            drop_last=True
-        )
-        return data, data_loader
-
+        out_fn_pred = os.path.join(self.save_dir, model_name, str(file_name)+'.jpg')
+        cv2.imwrite(out_fn_pred, np.concatenate((net_result, border_img, gt_print), axis=1))

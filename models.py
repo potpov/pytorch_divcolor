@@ -1,11 +1,10 @@
 from vae import VAE
 from mdn import MDN
 from cvae import CVAE
-import numpy as np
 import torch
 import torch.optim as optim
 from tqdm import tqdm
-from utilities import Utilities
+from loss import Losses
 from tensorboardX import SummaryWriter
 import os
 from torch.optim.lr_scheduler import StepLR
@@ -19,6 +18,8 @@ def model(utilities):
     # load config file from previous or new experiments
     save_dir = utilities.save_dir
     conf = utilities.conf
+    # creating loss class
+    loss_set = Losses(conf)
 
     ####################
     #    VAE + MDN     #
@@ -31,8 +32,7 @@ def model(utilities):
     mdn.cuda()
 
     # LOAD TRAINING DATA
-    data, data_loader = utilities.load_data('train', outdir=os.path.join(save_dir, 'results_mdn'))
-    nbatches = np.int_(np.floor(data.img_num / conf['BATCHSIZE']))
+    data_loader = utilities.load_data('train')
 
     ##############
     # TRAINING VAE
@@ -48,8 +48,9 @@ def model(utilities):
         optimizer = optim.Adam(vae.parameters(), lr=conf['VAE_LR'])
         scheduler = StepLR(optimizer, step_size=conf['SCHED_VAE_STEP'], gamma=conf['SCHED_VAE_GAMMA'])
         i = 0
+
         for epochs in range(conf['EPOCHS']):
-            for batch_idx, (input_color, _, weights, _, _) in tqdm(enumerate(data_loader), total=nbatches):
+            for batch_idx, (input_color, _, weights, _, _) in tqdm(enumerate(data_loader), total=len(data_loader)):
 
                 # moving to cuda
                 input_color = input_color.cuda()
@@ -61,7 +62,7 @@ def model(utilities):
                 mu, logvar, color_out = vae(color=input_color, z_in=None)
 
                 # computing losses
-                kl_loss, recon_loss, grad_loss, mah_loss = utilities.vae_loss(
+                kl_loss, recon_loss, grad_loss, mah_loss = loss_set.vae_loss(
                     mu,
                     logvar,
                     color_out,
@@ -76,6 +77,7 @@ def model(utilities):
                     mah_loss.mul(conf['MAH_W'])
                     ]
                 )
+
                 loss.backward()
                 optimizer.step()
 
@@ -113,7 +115,7 @@ def model(utilities):
         scheduler = StepLR(optimizer, step_size=conf['SCHED_MDN_STEP'], gamma=conf['SCHED_MDN_GAMMA'])
         i = 0
         for epochs in range(conf['EPOCHS']):
-            for batch_idx, (input_color, _, _, _, grey_cropped) in tqdm(enumerate(data_loader), total=nbatches):
+            for batch_idx, (input_color, _, _, _, grey_cropped) in tqdm(enumerate(data_loader), total=len(data_loader)):
 
                 # moving to cuda
                 input_color = input_color.cuda()
@@ -125,12 +127,13 @@ def model(utilities):
                 mdn_gmm_params = mdn(grey_cropped)
 
                 # computing mdn loss
-                loss, loss_l2 = utilities.mdn_loss(
+                loss, loss_l2 = loss_set.mdn_loss(
                     mdn_gmm_params,
                     mu,
                     torch.sqrt(torch.exp(logvar)),
                     conf['BATCHSIZE']
                 )
+
                 loss.backward()
                 optimizer.step()
 
@@ -142,8 +145,7 @@ def model(utilities):
             scheduler.step()
         print("MDN training completed.")
 
-    data, data_loader = utilities.load_data('test', outdir=os.path.join(save_dir, 'results_mdn'))
-    nbatches = np.int_(np.floor(data.img_num / conf['BATCHSIZE']))
+    data_loader = utilities.load_data('test')
 
     ###################
     # TESTING VAE + MDN
@@ -154,14 +156,12 @@ def model(utilities):
         mdn.train(False)
         vae.eval()
         mdn.eval()
-        for batch_idx, (batch, batch_recon_const, batch_weights,
-                        batch_recon_const_outres, grey_cropped) in \
-                tqdm(enumerate(data_loader), total=nbatches):
+        for batch_idx, (input_color, grey_little, _, _, grey_cropped) in tqdm(enumerate(data_loader), total=len(data_loader)):
             with torch.no_grad():
                 grey_cropped = grey_cropped.cuda()  # grey features
 
                 mdn_gmm_params = mdn(grey_cropped)
-                gmm_mu, gmm_pi = utilities.get_gmm_coeffs(mdn_gmm_params)
+                gmm_mu, gmm_pi = loss_set.get_gmm_coeffs(mdn_gmm_params)
 
                 # creating indexes and ordering means according to the gaussian weights Pi
                 pi_indexes = gmm_pi.argsort(dim=1, descending=True)
@@ -176,26 +176,25 @@ def model(utilities):
                     result.append(color_out.unsqueeze(dim=1))
                 result = torch.cat(result, dim=1)  # concat over the num-mix dimension
 
-                data.dump_results(
+                # printing results for this batch
+                utilities.dump_results(
                     color=result,  # batch of 8 predictions  for AB channels
-                    grey=batch_recon_const,  # batch of original grey channel
-                    gt=batch,  # batch of gt AB channels
-                    name=batch_idx,
-                    nmix=conf['NMIX']
+                    grey=grey_little,  # batch of original grey channel
+                    gt=input_color,  # batch of gt AB channels
+                    file_name=batch_idx,
+                    nmix=conf['NMIX'],
+                    model_name='results_mdn'
                 )
 
-
-
     ###############
-    #### CVAE  ####
+    #    CVAE     #
     ###############
 
     print("creating model B architecture...")
     cvae = CVAE(conf)
     cvae.cuda()
 
-    data, data_loader = utilities.load_data('train', outdir=os.path.join(save_dir, 'results_cvae'))
-    nbatches = np.int_(np.floor(data.img_num / conf['BATCHSIZE']))
+    data_loader = utilities.load_data('train')
 
     ###############
     # TRAINING CVAE
@@ -211,23 +210,24 @@ def model(utilities):
         optimizer = optim.Adam(cvae.parameters(), lr=conf['VAE_LR'])
 
         for epochs in range(conf['EPOCHS']):
-            for batch_idx, (batch, batch_recon_const, batch_weights, batch_recon_const_outres, _) in \
-                    tqdm(enumerate(data_loader), total=nbatches):
+            for batch_idx, (input_color, grey_little, batch_weights, _, _) in \
+                    tqdm(enumerate(data_loader), total=len(data_loader)):
 
-                input_color = batch.cuda()
+                input_color = input_color.cuda()
                 lossweights = batch_weights.cuda()
                 lossweights = lossweights.view(conf['BATCHSIZE'], -1)
-                input_greylevel = batch_recon_const.cuda()
+                input_grey = grey_little.cuda()
 
                 optimizer.zero_grad()
-                color_out = cvae(color=input_color, greylevel=input_greylevel)
+                color_out = cvae(color=input_color, greylevel=input_grey)
                 # fancy LOSS Calculation
-                recon_loss, recon_loss_l2 = utilities.cvae_loss(
+                recon_loss, recon_loss_l2 = loss_set.cvae_loss(
                     color_out,
                     input_color,
                     lossweights,
                 )
                 loss = recon_loss
+
                 recon_loss_l2.detach()
                 loss.backward()
                 optimizer.step()
@@ -241,25 +241,23 @@ def model(utilities):
 
     if conf['TEST_CVAE']:
         print("starting CVAE testing..")
-        data, data_loader = utilities.load_data('test', outdir=os.path.join(save_dir, 'results_cvae'))
-        nbatches = np.int_(np.floor(data.img_num / conf['BATCHSIZE']))
+        data_loader = utilities.load_data('test')
 
         cvae.train(False)
-        for batch_idx, (batch, batch_recon_const, batch_weights,
-                        batch_recon_const_outres, batch_feats) in \
-                tqdm(enumerate(data_loader), total=nbatches):
+        for batch_idx, (batch, grey_little, batch_weights, _, _) in \
+                tqdm(enumerate(data_loader), total=len(data_loader)):
 
-            input_feats = batch_feats.cuda()
+            # input_feats = batch_feats.cuda()
+            input_grey = grey_little.cuda()
 
-            input_greylevel = batch_recon_const.cuda()
+            color_out = cvae(color=None, greylevel=input_grey)
 
-            color_out = cvae(color=None, greylevel=input_greylevel)
-
-            data.dump_results(
+            utilities.dump_results(
                 color=color_out,  # batch of 8 predictions  for AB channels
-                grey=batch_recon_const,  # batch of original grey channel
+                grey=grey_little,  # batch of original grey channel
                 gt=batch,  # batch of gt AB channels
-                name=batch_idx,
+                file_name=batch_idx,
                 nmix=1,
+                model_name='results_cvae'
             )
         print("CVAE testing completed")
