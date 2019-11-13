@@ -1,16 +1,16 @@
 
 default_conf = {
 
-    'DATASET_NAME': 'bigearth',  # bigearth, lfw, ...
+    'DATASET_NAME': 'lfw',  # bigearth, lfw, ...
 
-    'TRAIN_MDN': True,  # if train of mdn has to be performed
-    'TRAIN_VAE': True,  # if train of vae has to be performed
+    'TRAIN_MDN': False,  # if train of mdn has to be performed
+    'TRAIN_VAE': False,  # if train of vae has to be performed
     'LOAD_MDN': False,  # if existing weights has to be loaded
     'LOAD_VAE': False,  # same as above
     'TEST_MDN_VAE': True,
 
     'LOAD_CVAE': False,
-    'TRAIN_CVAE': True,
+    'TRAIN_CVAE': False,
     'TEST_CVAE': True,
 
     'OUT_DIR': 'tests/',

@@ -53,8 +53,9 @@ class Colordata(Dataset):
 
         # converting original image to CIELAB
         img = cv2.imread(os.path.join(self.curr_dir, self.img_fns[idx]))
-        img_lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-        img_lab = ((img_lab * 2.) / 255.) - 1.
+        img_norm = img.astype(np.float32)/255
+        img_lab = cv2.cvtColor(img_norm, cv2.COLOR_RGB2LAB)
+        # img_lab = ((img_lab * 2.) / 255.) - 1.
 
         # creating scaled versions of the image
         img_big = cv2.resize(img_lab, (self.outshape[0], self.outshape[0]))
@@ -71,8 +72,8 @@ class Colordata(Dataset):
         color_ab[1, :, :] = img_little[..., 2].reshape(1, self.shape[0], self.shape[1])
 
         # loading hist weights
-        if self.lossweights is not None:
-            weights = self.__getweights__(color_ab)
+        # if self.lossweights is not None:
+        #    weights = self.__getweights__(color_ab)
 
         return color_ab, grey_little, weights, grey_big, grey_cropped
 

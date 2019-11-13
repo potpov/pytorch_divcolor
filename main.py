@@ -6,10 +6,10 @@ if __name__ == '__main__':
 
     # None for new experiment, string or list of strings of folders to load experiments
     config_dirs = {
-        'bigearth': '2019-11-12_18:25:41.518313',
-        # 'lfw': '2019-11-12_15:45:51.574263',
+        # 'bigearth': '2019-11-12_18:25:41.518313',
+        'lfw': 'test',
     }
-    # config_dirs = None
+    config_dirs = None
 
     if config_dirs is not None and len(config_dirs) > 0:
         # load experiments

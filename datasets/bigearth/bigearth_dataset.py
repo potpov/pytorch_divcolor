@@ -16,7 +16,7 @@ def quantiles_std(img, band, quantiles):
     img[img > max_q] = max_q
     img_dest = np.zeros_like(img)
     img_dest = cv2.normalize(img, img_dest, 0, 255, cv2.NORM_MINMAX)
-    img_dest = img_dest.astype(np.float32)
+    img_dest = img_dest.astype(np.float32)/255
     return img_dest
 
 
@@ -73,7 +73,7 @@ class BigEarthDataset(Dataset):
         spectral_img = np.concatenate(imgs_bands, axis=2)
         spectral_bands, rgb = split_bands(spectral_img)
         # return self.to_tensor(spectral_bands), self.to_tensor(rgb)
-        return self.to_lab(rgb)
+        return self.generate_inputs(rgb)
 
     def __len__(self):
         return self.data_len
@@ -89,7 +89,7 @@ class BigEarthDataset(Dataset):
         # return the train and test index
         return indices[split:], indices[:split]
 
-    def to_lab(self, rgb):
+    def generate_inputs(self, rgb):
         """
         return set of images for the models
         :param rgb: rgb image to be converted

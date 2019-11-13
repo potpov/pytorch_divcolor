@@ -124,15 +124,16 @@ class Utilities:
         """
 
         # here we print the output image for the entire batch (in pieces)
-        net_result = np.zeros((self.conf['BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 3), dtype='uint8')
-        border_img = 255 * np.ones((self.conf['BATCHSIZE'] * self.conf['IMG_H'], 128, 3), dtype='uint8')  # border
+        net_result = np.zeros((self.conf['BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 3))
+        border_img = 255 * np.ones((self.conf['BATCHSIZE'] * self.conf['IMG_H'], 128, 3))  # border
+        gt_print = np.zeros((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W'], 3))
 
         # restoring previous shapes and formats
         # color = (F.interpolate(color, size=(2, self.conf['IMG_H'], self.conf['IMG_W'])))
         # grey = (F.interpolate(grey, size=(self.conf['IMG_H'], self.conf['IMG_W'])))
         # gt = (F.interpolate(gt, size=(self.conf['IMG_H'], self.conf['IMG_W'])))
 
-        # swap axes and reshape layers to fit output image
+        # swap axes and reshape layers to fit correct format when reshaping
         grey = grey.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W']))
 
         if nmix != 1:  # CVAE case where we haven't multiple samplings
@@ -141,15 +142,18 @@ class Utilities:
             color = color.permute((0, 2, 3, 1))
 
         color = color.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 2))
-
         gt = gt.permute((0, 2, 3, 1))
         gt = gt.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W'], 2))
 
-        gt_print = cv2.merge((self.restore(grey).data.numpy(), self.restore(gt).data.numpy()))
-        net_result[:, :, 0] = self.restore(grey.repeat((1, nmix)))
-        net_result[:, :, 1:3] = self.restore(color).cpu()
-        net_result = cv2.cvtColor(net_result, cv2.COLOR_LAB2RGB)
-        gt_print = cv2.cvtColor(gt_print, cv2.COLOR_LAB2RGB)
+        # copying layers
+        gt_print[:, :, 0] = grey
+        gt_print[:, :, 1:3] = gt
+        net_result[:, :, 0] = grey.repeat((1, nmix))
+        net_result[:, :, 1:3] = color.detach().cpu()
+
+        # conversion LAB -> RGB
+        gt_print = (cv2.cvtColor(gt_print.astype('float32'), cv2.COLOR_LAB2RGB) * 255).astype('uint8')
+        net_result = (cv2.cvtColor(net_result.astype('float32'), cv2.COLOR_LAB2RGB) * 255).astype('uint8')
 
         out_fn_pred = os.path.join(self.save_dir, model_name, str(file_name)+'.jpg')
         cv2.imwrite(out_fn_pred, np.concatenate((net_result, border_img, gt_print), axis=1))
