@@ -72,7 +72,7 @@ def model(utilities):
                 # summing losses
                 loss = sum([
                     kl_loss.mul(conf['KL_W']),
-                    recon_loss.mul(conf['HIST_W']),
+                    # recon_loss.mul(conf['HIST_W']),
                     grad_loss.mul(conf['GRA_W']),
                     mah_loss.mul(conf['MAH_W'])
                     ]
@@ -82,13 +82,13 @@ def model(utilities):
                 optimizer.step()
 
                 # TENSOR BOARD DEBUG
-                writer.add_scalar('VAE_Loss', loss.item(), i)
-                writer.add_scalar('VAE_Loss_grad', grad_loss, i)
-                writer.add_scalar('VAE_Loss_kl', kl_loss, i)
-                writer.add_scalar('VAE_Loss_mah', mah_loss, i)
+                writer.add_scalar('VAE/total_Loss', loss.item(), i)
+                writer.add_scalar('VAE/Loss_grad', grad_loss, i)
+                writer.add_scalar('VAE/Loss_kl', kl_loss, i)
+                writer.add_scalar('VAE/Loss_mah', mah_loss, i)
                 # writer.add_scalar('one weight', vae.enc_fc1.weight.cpu().detach().numpy()[0][0], i)
                 # writer.add_scalar('one grad', vae.enc_fc1.weight.grad.cpu().detach().numpy()[0][0], i)
-                writer.add_scalar('VAE_Loss_hist', recon_loss, i)
+                writer.add_scalar('VAE/Loss_hist', recon_loss, i)
                 # writer.add_histogram('weights', vae.enc_fc1.weight.cpu().detach().numpy(), i)
                 i = i + 1
                 # END OF TENSOR BOARD DEBUG
@@ -138,7 +138,7 @@ def model(utilities):
                 optimizer.step()
 
                 # tensor board debug
-                writer.add_scalar('MDN_Loss', loss.item(), i)
+                writer.add_scalar('MDN/total_Loss', loss.item(), i)
                 i = i + 1
 
             torch.save(mdn.state_dict(), '%s/model_mdn.pth' % save_dir)
@@ -183,7 +183,8 @@ def model(utilities):
                     gt=input_color,  # batch of gt AB channels
                     file_name=batch_idx,
                     nmix=conf['NMIX'],
-                    model_name='results_mdn'
+                    model_name='results_mdn',
+                    tb_writer=writer
                 )
 
     ###############
@@ -208,7 +209,7 @@ def model(utilities):
         print("starting CVAE Training for model B")
         cvae.train(True)
         optimizer = optim.Adam(cvae.parameters(), lr=conf['VAE_LR'])
-
+        i = 0
         for epochs in range(conf['EPOCHS']):
             for batch_idx, (input_color, grey_little, batch_weights, _, _) in \
                     tqdm(enumerate(data_loader), total=len(data_loader)):
@@ -221,14 +222,16 @@ def model(utilities):
                 optimizer.zero_grad()
                 color_out = cvae(color=input_color, greylevel=input_grey)
                 # fancy LOSS Calculation
-                recon_loss, recon_loss_l2 = loss_set.cvae_loss(
+                loss = loss_set.cvae_loss(
                     color_out,
                     input_color,
                     lossweights,
                 )
-                loss = recon_loss
 
-                recon_loss_l2.detach()
+                # log loss
+                writer.add_scalar('CVAE/total_loss', loss.item(), i)
+                i = i + 1
+
                 loss.backward()
                 optimizer.step()
             torch.save(cvae.state_dict(), '%s/model_cvae.pth' % save_dir)
@@ -258,6 +261,7 @@ def model(utilities):
                 gt=batch,  # batch of gt AB channels
                 file_name=batch_idx,
                 nmix=1,
-                model_name='results_cvae'
+                model_name='results_cvae',
+                tb_writer=writer
             )
         print("CVAE testing completed")

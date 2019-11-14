@@ -68,7 +68,7 @@ class Utilities:
         """
         # BIG EARTH DATA LOADER
         if self.dataset_name == 'bigearth':
-            big_earth = BigEarthDataset('big_earth_3000.csv', 'quantiles_3000.json', 42)
+            big_earth = BigEarthDataset('big_earth_50000.csv', 'quantiles_50000.json', 42)
             train_idx, test_idx = big_earth.split_dataset(0.2)
             if split == 'train':
                 sampler = SubsetRandomSampler(train_idx)
@@ -108,25 +108,27 @@ class Utilities:
         :param img_enc: CIELAB channels
         :return: RGB conversion
         """
-        # img_dec = (((img_enc + 1.) * 1.) / 2.) * 255.
-        img_dec = img_enc
+        img_dec = (((img_enc + 1.) * 1.) / 2.) * 255.
+        # img_dec = img_enc
         img_dec[img_dec < 0.] = 0.
         img_dec[img_dec > 255.] = 255.
         return img_dec.type(torch.uint8)
 
-    def dump_results(self, color, grey, gt, nmix, model_name, file_name='result'):
+    def dump_results(self, color, grey, gt, nmix, model_name, file_name='result', tb_writer=None):
         """
         :param color: network output 32x(8)x2x64x64
         :param grey: grey input 32x64x64
         :param gt: original image  32x2x64x64
         :param nmix: number of samples from the mdn
-        :param name: output name for this file
+        :param model_name: {mdn|cvae}
+        :param file_name: name of the new image
+        :param tb_writer: tensorboardX writer
         """
 
         # here we print the output image for the entire batch (in pieces)
-        net_result = np.zeros((self.conf['BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 3))
+        net_result = np.zeros((self.conf['BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 3), dtype='uint8')
         border_img = 255 * np.ones((self.conf['BATCHSIZE'] * self.conf['IMG_H'], 128, 3))  # border
-        gt_print = np.zeros((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W'], 3))
+        # gt_print = np.zeros((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W'], 3))
 
         # restoring previous shapes and formats
         # color = (F.interpolate(color, size=(2, self.conf['IMG_H'], self.conf['IMG_W'])))
@@ -145,15 +147,20 @@ class Utilities:
         gt = gt.permute((0, 2, 3, 1))
         gt = gt.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W'], 2))
 
-        # copying layers
-        gt_print[:, :, 0] = grey
-        gt_print[:, :, 1:3] = gt
-        net_result[:, :, 0] = grey.repeat((1, nmix))
-        net_result[:, :, 1:3] = color.detach().cpu()
-
-        # conversion LAB -> RGB
-        gt_print = (cv2.cvtColor(gt_print.astype('float32'), cv2.COLOR_LAB2RGB) * 255).astype('uint8')
-        net_result = (cv2.cvtColor(net_result.astype('float32'), cv2.COLOR_LAB2RGB) * 255).astype('uint8')
+        # LAB -> RGB
+        gt_print = cv2.merge((self.restore(grey).data.numpy(), self.restore(gt).data.numpy()))
+        net_result[:, :, 0] = self.restore(grey.repeat((1, nmix)))
+        net_result[:, :, 1:3] = self.restore(color).detach().cpu()
+        gt_print = cv2.cvtColor(gt_print, cv2.COLOR_LAB2BGR)
+        net_result = cv2.cvtColor(net_result, cv2.COLOR_LAB2BGR)
 
         out_fn_pred = os.path.join(self.save_dir, model_name, str(file_name)+'.jpg')
-        cv2.imwrite(out_fn_pred, np.concatenate((net_result, border_img, gt_print), axis=1))
+        result_image = np.concatenate((net_result, border_img, gt_print), axis=1)
+        cv2.imwrite(out_fn_pred, result_image)
+
+        # saving path for tensorboard will be something like mdn/result on iteration == batch idx
+        # tensorboard needs input as 3 x H x W
+        if tb_writer is not None:
+            result_image = result_image[:, :, ::-1]
+            result_image = np.transpose(result_image.astype('uint8'), (2, 0, 1))
+            tb_writer.add_image('{}/img_results'.format(model_name), result_image, int(file_name))

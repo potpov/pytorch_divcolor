@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import pandas as pd
 from distutils.dir_util import copy_tree
-from .dict_to_something import save_dict_to_json
+from dict_to_something import save_dict_to_json
 import os
 
 
@@ -26,7 +26,7 @@ def big_earth_to_csv(big_e_path, num_samples, csv_filename):
     with open(csv_filename, "w") as f:
         writer = csv.writer(f)
         writer.writerows(dirs)
-    print(f"finishing in : {time.time() - start_time}")
+    print("finishing in {}".format(time.time() - start_time))
 
 
 def copy_dir(big_e_path, small_e_path, num_samples):
@@ -64,15 +64,15 @@ def csv_to_list(csv_path):
 
 
 if __name__ == '__main__':
-    data_dir = ''
-    big_earth_to_csv(os.path.join(data_dir, "images"), 3000, os.path.join(data_dir, "big_earth_3000.csv"))
+    data_dir = '/nas/softechict-nas-1/mcipriano/'
+    big_earth_to_csv(os.path.join(data_dir, "BigEarthNet-v1.0/"), 50000, os.path.join(data_dir, "big_earth_50000.csv"))
     # big_earth_to_csv("/nas/softechict-nas-2/svincenzi/BigEarthNet-v1.0", -1, "big_earth_all.csv")
 
-    paths = csv_to_list(os.path.join(data_dir, 'big_earth_3000.csv'))
+    paths = csv_to_list('/nas/softechict-nas-1/mcipriano/big_earth_50000.csv')
     # # calculate the min_max quantile for every spectral bands, specifying the number of samples to use
     q = min_max_quantile(paths)
     # # save the result on a json file
-    save_dict_to_json(q, os.path.join(data_dir, "quantiles_3000.json"))
+    save_dict_to_json(q, os.path.join(data_dir, "/nas/softechict-nas-1/mcipriano/quantiles_50000.json"))
     # copy_dir('/nas/softechict-nas-2/svincenzi/BigEarthNet-v1.0', '/nas/softechict-nas-2/svincenzi/BigEarthNet_small', 300)
 
 

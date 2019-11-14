@@ -16,8 +16,7 @@ def quantiles_std(img, band, quantiles):
     img[img > max_q] = max_q
     img_dest = np.zeros_like(img)
     img_dest = cv2.normalize(img, img_dest, 0, 255, cv2.NORM_MINMAX)
-    img_dest = img_dest.astype(np.float32)/255
-    return img_dest
+    return img_dest.astype('uint8')
 
 
 # function for read, resize and normalize the images
@@ -61,6 +60,18 @@ class BigEarthDataset(Dataset):
         self.quantiles = load_dict_from_json(os.path.join(self.curr_dir, quantiles))
         # bands
         self.bands = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"]
+
+        # histogram weights
+        self.lossweights = None
+        countbins = 1. / np.load(os.path.join(self.curr_dir, 'zhang_weights/prior_probs.npy'))
+        binedges = np.load(os.path.join(self.curr_dir, 'zhang_weights/ab_quantize.npy')).reshape(2, 313)
+        lossweights = {}
+        for i in range(313):
+            if binedges[0, i] not in lossweights:
+                lossweights[binedges[0, i]] = {}
+            lossweights[binedges[0, i]][binedges[1, i]] = countbins[i]
+        self.binedges = binedges
+        self.lossweights = lossweights
 
     def __getitem__(self, index):
         # obtain the right folder
@@ -107,7 +118,7 @@ class BigEarthDataset(Dataset):
 
         # converting original image to CIELAB
         img_lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
-        # img_lab = ((img_lab * 2.) / 255.) - 1.
+        img_lab = ((img_lab * 2.) / 255.) - 1.
 
         # creating scaled versions of the image
         img_big = cv2.resize(img_lab, (256, 256))
@@ -123,4 +134,23 @@ class BigEarthDataset(Dataset):
         color_ab[0, :, :] = img_little[..., 1].reshape(1, 64, 64)
         color_ab[1, :, :] = img_little[..., 2].reshape(1, 64, 64)
 
+        # load weights
+        if self.lossweights is not None:
+            weights = self.__getweights__(color_ab)
+
         return color_ab, grey_little, weights, grey_big, grey_cropped
+
+    def __getweights__(self, img):
+        img_vec = img.reshape(-1)
+        img_vec = img_vec * 128.
+        img_lossweights = np.zeros(img.shape, dtype='f')
+        img_vec_a = img_vec[:np.prod((64, 64))]
+        binedges_a = self.binedges[0, ...].reshape(-1)
+        binid_a = [binedges_a.flat[np.abs(binedges_a - v).argmin()] for v in img_vec_a]
+        img_vec_b = img_vec[np.prod((64, 64)):]
+        binedges_b = self.binedges[1, ...].reshape(-1)
+        binid_b = [binedges_b.flat[np.abs(binedges_b - v).argmin()] for v in img_vec_b]
+        binweights = np.array([self.lossweights[v1][v2] for v1, v2 in zip(binid_a, binid_b)])
+        img_lossweights[0, :, :] = binweights.reshape((64, 64))
+        img_lossweights[1, :, :] = binweights.reshape((64, 64))
+        return img_lossweights

@@ -122,7 +122,7 @@ class Losses:
         """
         recon_loss = self.hist_loss(gt, pred, lossweights)
         recon_loss_l2 = self.l2_loss(gt, pred)
-        return recon_loss, recon_loss_l2
+        return recon_loss_l2
 
     def get_gmm_coeffs(self, gmm_params):
         """
@@ -136,7 +136,6 @@ class Losses:
         gmm_pi_activ.contiguous()
         gmm_pi = F.softmax(gmm_pi_activ, dim=1)
         return gmm_mu, gmm_pi
-
 
     def mdn_loss(self, gmm_params, mu, stddev, batchsize):
         gmm_mu, gmm_pi = self.get_gmm_coeffs(gmm_params)

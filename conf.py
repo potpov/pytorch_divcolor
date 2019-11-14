@@ -1,16 +1,16 @@
 
 default_conf = {
 
-    'DATASET_NAME': 'lfw',  # bigearth, lfw, ...
+    'DATASET_NAME': 'bigearth',  # bigearth, lfw, ...
 
-    'TRAIN_MDN': False,  # if train of mdn has to be performed
-    'TRAIN_VAE': False,  # if train of vae has to be performed
+    'TRAIN_MDN': True,  # if train of mdn has to be performed
+    'TRAIN_VAE': True,  # if train of vae has to be performed
     'LOAD_MDN': False,  # if existing weights has to be loaded
     'LOAD_VAE': False,  # same as above
     'TEST_MDN_VAE': True,
 
     'LOAD_CVAE': False,
-    'TRAIN_CVAE': False,
+    'TRAIN_CVAE': True,
     'TEST_CVAE': True,
 
     'OUT_DIR': 'tests/',
@@ -18,11 +18,12 @@ default_conf = {
     'SEED': 42,
     "TEST_SPLIT": 0.2,
 
+    'EPOCHS': 20,
     'NTHREADS': 8,  # data-loader workers
     'HIDDENSIZE': 64,  # encoder and mdn output size
     'NMIX': 8,  # number of samples AKA different colorizations for a given image
     'BATCHSIZE': 32,
-    'EPOCHS': 1,
+
 
     'VAE_LR': 5e-5,  # VAE learning rate
     'MDN_LR': 1e-3,  # MDN learning rate
