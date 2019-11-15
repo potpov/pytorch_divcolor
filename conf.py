@@ -1,16 +1,23 @@
+import socket
+
+deploy = True
+if socket.gethostname() == 'parrot':
+    deploy = False
 
 default_conf = {
 
     'DATASET_NAME': 'bigearth',  # bigearth, lfw, ...
 
+    'BIG_EARTH_CVS_NAME': 'big_earth_50000.csv' if deploy else 'big_earth_3000.csv',
+    'BIG_EARTH_QNTL_NAME': 'quantiles_50000.json' if deploy else 'quantiles_3000.json',
     'TRAIN_MDN': True,  # if train of mdn has to be performed
     'TRAIN_VAE': True,  # if train of vae has to be performed
     'LOAD_MDN': False,  # if existing weights has to be loaded
     'LOAD_VAE': False,  # same as above
     'TEST_MDN_VAE': True,
 
-    'LOAD_CVAE': False,
     'TRAIN_CVAE': True,
+    'LOAD_CVAE': False,
     'TEST_CVAE': True,
 
     'OUT_DIR': 'tests/',
@@ -18,7 +25,7 @@ default_conf = {
     'SEED': 42,
     "TEST_SPLIT": 0.2,
 
-    'EPOCHS': 20,
+    'EPOCHS': 1,
     'NTHREADS': 8,  # data-loader workers
     'HIDDENSIZE': 64,  # encoder and mdn output size
     'NMIX': 8,  # number of samples AKA different colorizations for a given image

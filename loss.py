@@ -63,11 +63,11 @@ class Losses:
 
     def kl_loss(self, mu, logvar):
         """
-        calculate the Kullback–Leibler distance between the predicted distribution
+        compute the Kullback Leibler distance between the predicted distribution
         and the normal N(0, I)
         :param mu: predicted mean
         :param logvar: predicted log(variance)
-        :return: kl distance
+        :return: kl_distance
         """
         kl_element = torch.add(torch.add(torch.add(mu.pow(2), logvar.exp()), -1), logvar.mul(-1))
         return torch.sum(kl_element).mul(.5)
@@ -122,7 +122,7 @@ class Losses:
         """
         recon_loss = self.hist_loss(gt, pred, lossweights)
         recon_loss_l2 = self.l2_loss(gt, pred)
-        return recon_loss_l2
+        return recon_loss
 
     def get_gmm_coeffs(self, gmm_params):
         """

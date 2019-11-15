@@ -63,8 +63,8 @@ class BigEarthDataset(Dataset):
 
         # histogram weights
         self.lossweights = None
-        countbins = 1. / np.load(os.path.join(self.curr_dir, 'zhang_weights/prior_probs.npy'))
-        binedges = np.load(os.path.join(self.curr_dir, 'zhang_weights/ab_quantize.npy')).reshape(2, 313)
+        countbins = 1. / np.load(os.path.join(self.curr_dir, 'pot_weights/prior_bigearth.npy'))
+        binedges = np.load(os.path.join(self.curr_dir, 'pot_weights/ab_quantize.npy')).reshape(2, 313)
         lossweights = {}
         for i in range(313):
             if binedges[0, i] not in lossweights:

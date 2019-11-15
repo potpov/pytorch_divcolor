@@ -68,7 +68,7 @@ class Utilities:
         """
         # BIG EARTH DATA LOADER
         if self.dataset_name == 'bigearth':
-            big_earth = BigEarthDataset('big_earth_50000.csv', 'quantiles_50000.json', 42)
+            big_earth = BigEarthDataset(self.conf['BIG_EARTH_CVS_NAME'], self.conf['BIG_EARTH_QNTL_NAME'], 42)
             train_idx, test_idx = big_earth.split_dataset(0.2)
             if split == 'train':
                 sampler = SubsetRandomSampler(train_idx)

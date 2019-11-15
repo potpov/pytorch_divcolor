@@ -62,7 +62,7 @@ def model(utilities):
                 mu, logvar, color_out = vae(color=input_color, z_in=None)
 
                 # computing losses
-                kl_loss, recon_loss, grad_loss, mah_loss = loss_set.vae_loss(
+                kl_loss, hist_loss, grad_loss, mah_loss = loss_set.vae_loss(
                     mu,
                     logvar,
                     color_out,
@@ -72,7 +72,7 @@ def model(utilities):
                 # summing losses
                 loss = sum([
                     kl_loss.mul(conf['KL_W']),
-                    # recon_loss.mul(conf['HIST_W']),
+                    hist_loss.mul(conf['HIST_W']),
                     grad_loss.mul(conf['GRA_W']),
                     mah_loss.mul(conf['MAH_W'])
                     ]
@@ -86,10 +86,7 @@ def model(utilities):
                 writer.add_scalar('VAE/Loss_grad', grad_loss, i)
                 writer.add_scalar('VAE/Loss_kl', kl_loss, i)
                 writer.add_scalar('VAE/Loss_mah', mah_loss, i)
-                # writer.add_scalar('one weight', vae.enc_fc1.weight.cpu().detach().numpy()[0][0], i)
-                # writer.add_scalar('one grad', vae.enc_fc1.weight.grad.cpu().detach().numpy()[0][0], i)
-                writer.add_scalar('VAE/Loss_hist', recon_loss, i)
-                # writer.add_histogram('weights', vae.enc_fc1.weight.cpu().detach().numpy(), i)
+                writer.add_scalar('VAE/Loss_hist', hist_loss, i)
                 i = i + 1
                 # END OF TENSOR BOARD DEBUG
 
