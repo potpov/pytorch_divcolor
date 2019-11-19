@@ -20,6 +20,9 @@ def model(utilities):
     conf = utilities.conf
     # creating loss class
     loss_set = Losses(conf)
+    # reload weights for the bigearth dataset if required
+    if conf['RELOAD_WEIGHTS']:
+        utilities.reload_weights()
 
     ####################
     #    VAE + MDN     #
@@ -38,8 +41,10 @@ def model(utilities):
     # TRAINING VAE
     ##############
 
+    checkpoint = 0
     if conf['LOAD_VAE']:
-        print("loading vae weights.")
+        print("loading vae weights. starting from epoch: " + str(conf['VAE_EPOCH_CHECKPOINT']))
+        checkpoint = conf['VAE_EPOCH_CHECKPOINT']
         vae.load_state_dict(torch.load(os.path.join(save_dir, 'model_vae.pth')))
 
     if conf['TRAIN_VAE']:
@@ -49,7 +54,7 @@ def model(utilities):
         scheduler = StepLR(optimizer, step_size=conf['SCHED_VAE_STEP'], gamma=conf['SCHED_VAE_GAMMA'])
         i = 0
 
-        for epochs in range(conf['EPOCHS']):
+        for epochs in range(checkpoint, conf['EPOCHS']):
             for batch_idx, (input_color, _, weights, _, _) in tqdm(enumerate(data_loader), total=len(data_loader)):
 
                 # moving to cuda
@@ -90,6 +95,7 @@ def model(utilities):
                 i = i + 1
                 # END OF TENSOR BOARD DEBUG
 
+            utilities.epoch_checkpoint('VAE', epochs)
             torch.save(vae.state_dict(), '%s/model_vae.pth' % save_dir)
             scheduler.step()
 
@@ -101,8 +107,10 @@ def model(utilities):
     # TRAINING MDN
     ##############
 
+    checkpoint = 0
     if conf['LOAD_MDN']:
-        print("loading mdn weights")
+        print("loading mdn weights, starting from epoch: " + str(conf['MDN_EPOCH_CHECKPOINT']))
+        checkpoint = conf['MDN_EPOCH_CHECKPOINT']
         mdn.load_state_dict(torch.load(os.path.join(save_dir, 'model_mdn.pth')))
 
     if conf['TRAIN_MDN']:
@@ -111,7 +119,7 @@ def model(utilities):
         optimizer = optim.Adam(mdn.parameters(), lr=conf['MDN_LR'])
         scheduler = StepLR(optimizer, step_size=conf['SCHED_MDN_STEP'], gamma=conf['SCHED_MDN_GAMMA'])
         i = 0
-        for epochs in range(conf['EPOCHS']):
+        for epochs in range(checkpoint, conf['EPOCHS']):
             for batch_idx, (input_color, _, _, _, grey_cropped) in tqdm(enumerate(data_loader), total=len(data_loader)):
 
                 # moving to cuda
@@ -138,6 +146,7 @@ def model(utilities):
                 writer.add_scalar('MDN/total_Loss', loss.item(), i)
                 i = i + 1
 
+            utilities.epoch_checkpoint('MDN', epochs)
             torch.save(mdn.state_dict(), '%s/model_mdn.pth' % save_dir)
             scheduler.step()
         print("MDN training completed.")
@@ -198,16 +207,18 @@ def model(utilities):
     # TRAINING CVAE
     ###############
 
+    checkpoint = 0
     if conf['LOAD_CVAE']:
-        print("loading weights for CVAE")
+        print("loading CVAE weights, starting from epoch: " + str(conf['CVAE_EPOCH_CHECKPOINT']))
+        checkpoint = conf['CVAE_EPOCH_CHECKPOINT']
         cvae.load_state_dict(torch.load(os.path.join(save_dir, 'model_cvae.pth')))
 
     if conf['TRAIN_CVAE']:
         print("starting CVAE Training for model B")
         cvae.train(True)
-        optimizer = optim.Adam(cvae.parameters(), lr=conf['VAE_LR'])
+        optimizer = optim.Adam(cvae.parameters(), lr=conf['CVAE_LR'])
         i = 0
-        for epochs in range(conf['EPOCHS']):
+        for epochs in range(checkpoint, conf['EPOCHS']):
             for batch_idx, (input_color, grey_little, batch_weights, _, _) in \
                     tqdm(enumerate(data_loader), total=len(data_loader)):
 
@@ -231,6 +242,7 @@ def model(utilities):
 
                 loss.backward()
                 optimizer.step()
+            utilities.epoch_checkpoint('CVAE', epochs)
             torch.save(cvae.state_dict(), '%s/model_cvae.pth' % save_dir)
 
         print("CVAE training completed.")
@@ -262,3 +274,5 @@ def model(utilities):
                 tb_writer=writer
             )
         print("CVAE testing completed")
+
+    utilities.test_complete()

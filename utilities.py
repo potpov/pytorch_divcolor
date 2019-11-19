@@ -2,6 +2,7 @@ from conf import default_conf
 from torch.utils.data import DataLoader
 from datasets.bigearth.bigearth_dataset import BigEarthDataset
 from datasets.lfw.lfw_dataset import Colordata
+from datasets.bigearth.quantizer import quantization
 from torch.utils.data import SubsetRandomSampler
 import os
 import datetime
@@ -60,6 +61,33 @@ class Utilities:
             self.conf = config
             self.dataset_name = dataset_name
 
+    def epoch_checkpoint(self, model, epoch):
+        """
+        update the json file with the currect achieved epoch number and print it to the config file
+        epoch: epoch number
+        """
+        if model == 'MDN':
+            self.conf['LOAD_MDN'] = True
+            self.conf['MDN_EPOCH_CHECKPOINT'] = epoch
+        elif model == 'VAE':
+            self.conf['LOAD_VAE'] = True
+            self.conf['VAE_EPOCH_CHECKPOINT'] = epoch
+        elif model == 'CVAE':
+            self.conf['LOAD_CVAE'] = True
+            self.conf['CVAE_EPOCH_CHECKPOINT'] = epoch
+        else:
+            raise Exception('invalid model in epoch checkpoint!')
+        # saving the new configuration
+        with open(os.path.join(self.save_dir, 'config.json'), "w") as write_file:
+            json.dump(default_conf, write_file, indent=4)
+
+    def test_complete(self):
+        self.conf['LOAD_CVAE'] = False
+        self.conf['LOAD_MDN'] = False
+        self.conf['LOAD_VAE'] = False
+        with open(os.path.join(self.save_dir, 'config.json'), "w") as write_file:
+            json.dump(default_conf, write_file, indent=4)
+
     def load_data(self, split):
         """
         generate dataloader according to the dataset
@@ -68,8 +96,10 @@ class Utilities:
         """
         # BIG EARTH DATA LOADER
         if self.dataset_name == 'bigearth':
+
             big_earth = BigEarthDataset(self.conf['BIG_EARTH_CVS_NAME'], self.conf['BIG_EARTH_QNTL_NAME'], 42)
             train_idx, test_idx = big_earth.split_dataset(0.2)
+
             if split == 'train':
                 sampler = SubsetRandomSampler(train_idx)
             else:
@@ -83,6 +113,7 @@ class Utilities:
                     drop_last=True
                 )
             return data_loader
+
         # LFW DATA LOADER
         elif self.dataset_name == 'lfw':
             data = Colordata(
@@ -101,6 +132,10 @@ class Utilities:
         # ERROR
         else:
             raise Exception('dataset not valid')
+
+    def reload_weights(self):
+        # calculate histogram for this dataset
+        quantization(conf=self.conf, q_factor=self.conf['Q_FACTOR'])
 
     def restore(self, img_enc):
         """

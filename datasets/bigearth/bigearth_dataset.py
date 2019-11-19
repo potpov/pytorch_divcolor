@@ -4,7 +4,7 @@ from torchvision import transforms
 import numpy as np
 import cv2
 import glob
-from .dict_to_something import load_dict_from_json
+from datasets.bigearth.dict_to_something import load_dict_from_json
 import os
 
 
@@ -38,40 +38,41 @@ def split_bands(spectral_img):
 
 
 class BigEarthDataset(Dataset):
-    def __init__(self, csv_path, quantiles, random_seed):
+    def __init__(self, csv_path, quantiles, random_seed, skip_weights=False):
         """
         Args:
             csv_path (string): path to csv file containing folder name that contain images
         """
         # saving the current dir of this subfolder for local imports
         self.curr_dir = os.path.dirname(__file__)
+
         # Transforms
         self.to_tensor = transforms.ToTensor()
+
         # Read the csv file
         self.data_info = pd.read_csv(os.path.join(self.curr_dir, csv_path), header=None)
+
         # First column contains the folder paths
         self.folder_path = self.data_info.iloc[:, 0].tolist()
+
         # shuffle the entries, specify the seed
         np.random.seed(random_seed)
         np.random.shuffle(self.folder_path)
+
         # Calculate len
         self.data_len = len(self.data_info)
+
         # load quantiles json file
         self.quantiles = load_dict_from_json(os.path.join(self.curr_dir, quantiles))
+
         # bands
         self.bands = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"]
 
         # histogram weights
-        self.lossweights = None
-        countbins = 1. / np.load(os.path.join(self.curr_dir, 'pot_weights/prior_bigearth.npy'))
-        binedges = np.load(os.path.join(self.curr_dir, 'pot_weights/ab_quantize.npy')).reshape(2, 313)
-        lossweights = {}
-        for i in range(313):
-            if binedges[0, i] not in lossweights:
-                lossweights[binedges[0, i]] = {}
-            lossweights[binedges[0, i]][binedges[1, i]] = countbins[i]
-        self.binedges = binedges
-        self.lossweights = lossweights
+        self.skip_weights = skip_weights
+        if not skip_weights:
+            self.binedges = np.load(os.path.join(self.curr_dir, 'pot_weights/ab_quantize.npy'))
+            self.weights = 1. / np.load(os.path.join(self.curr_dir, 'pot_weights/prior_bigearth.npy'))
 
     def __getitem__(self, index):
         # obtain the right folder
@@ -111,7 +112,6 @@ class BigEarthDataset(Dataset):
         :return: grey_cropped: greyscale cropped image, shape 1x224x224
         """
         color_ab = np.zeros((2, 64, 64), dtype='f')
-        weights = np.ones((2, 64, 64), dtype='f')
         grey_little = np.zeros((1, 64, 64), dtype='f')
         grey_big = np.zeros((1, 256, 256), dtype='f')
         grey_cropped = np.zeros((1, 224, 224), dtype='f')
@@ -134,23 +134,38 @@ class BigEarthDataset(Dataset):
         color_ab[0, :, :] = img_little[..., 1].reshape(1, 64, 64)
         color_ab[1, :, :] = img_little[..., 2].reshape(1, 64, 64)
 
-        # load weights
-        if self.lossweights is not None:
+        # load weights or return array of ones
+        weights = np.ones((2, 64, 64), dtype='f')
+        if not self.skip_weights:
             weights = self.__getweights__(color_ab)
 
         return color_ab, grey_little, weights, grey_big, grey_cropped
 
     def __getweights__(self, img):
+        """
+        foreach pixel search the bin and get the weight value for that bin in the weights histogram
+        :param img: AB channel image
+        :return: AB image shape with a weight on each pixel
+        """
+        # flat the img vector and select A channel
         img_vec = img.reshape(-1)
         img_vec = img_vec * 128.
-        img_lossweights = np.zeros(img.shape, dtype='f')
         img_vec_a = img_vec[:np.prod((64, 64))]
-        binedges_a = self.binedges[0, ...].reshape(-1)
-        binid_a = [binedges_a.flat[np.abs(binedges_a - v).argmin()] for v in img_vec_a]
+
+        # compute min distance between each pixel and the A edges, scale values on Quantization factor
+        binid_a = [np.abs(self.binedges - v).argmin() for v in img_vec_a]
+
+        # flat the img vector and select B channel
         img_vec_b = img_vec[np.prod((64, 64)):]
-        binedges_b = self.binedges[1, ...].reshape(-1)
-        binid_b = [binedges_b.flat[np.abs(binedges_b - v).argmin()] for v in img_vec_b]
-        binweights = np.array([self.lossweights[v1][v2] for v1, v2 in zip(binid_a, binid_b)])
-        img_lossweights[0, :, :] = binweights.reshape((64, 64))
-        img_lossweights[1, :, :] = binweights.reshape((64, 64))
-        return img_lossweights
+
+        # compute min distance between each pixel and the B edges
+        binid_b = [np.abs(self.binedges - v).argmin() for v in img_vec_b]
+
+        # merge the min indexes and get values from the hist
+        binweights = np.array([self.weights[int(v1), int(v2)] for v1, v2 in zip(binid_a, binid_b)])
+
+        # saving result for this image
+        result = np.zeros(img.shape, dtype='f')
+        result[0, :, :] = binweights.reshape((64, 64))
+        result[1, :, :] = binweights.reshape((64, 64))
+        return result

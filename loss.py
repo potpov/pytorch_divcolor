@@ -121,7 +121,7 @@ class Losses:
         :return:
         """
         recon_loss = self.hist_loss(gt, pred, lossweights)
-        recon_loss_l2 = self.l2_loss(gt, pred)
+        # recon_loss_l2 = self.l2_loss(gt, pred)
         return recon_loss
 
     def get_gmm_coeffs(self, gmm_params):

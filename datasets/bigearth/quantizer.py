@@ -1,75 +1,57 @@
-from bigearth_dataset import BigEarthDataset
+from .bigearth_dataset import BigEarthDataset
 from torch.utils.data import SubsetRandomSampler
 import torch
 from tqdm import tqdm
 import numpy as np
-import os
 import cv2
+import os
 
 
-big_earth = BigEarthDataset('big_earth_3000.csv', 'quantiles_3000.json', 42)
-train_idx, test_idx = big_earth.split_dataset(0.2)
-# define the sampler
-train_sampler = SubsetRandomSampler(train_idx)
-test_sampler = SubsetRandomSampler(test_idx)
-# define the loader
-loader = torch.utils.data.DataLoader(big_earth, batch_size=1,
-                                           sampler=train_sampler, num_workers=8)
+def quantization(conf, q_factor=100, skip_hist=False, skip_edges=False):
 
-data_loader = torch.utils.data.DataLoader(
-                    big_earth,
-                    batch_size=1,
-                    sampler=train_sampler,
-                    num_workers=8,
-                    drop_last=True
-                )
+    #################################
+    # loading dataset without weights
 
-curr_dir = os.path.dirname(__file__)
-binedges = np.load(os.path.join(curr_dir, 'zhang_weights/ab_quantize.npy')).reshape(2, 313)
-weights = np.zeros((210, 210), dtype='f')
-i = 0
+    big_earth = BigEarthDataset(conf['BIG_EARTH_CVS_NAME'], conf['BIG_EARTH_QNTL_NAME'], 42, skip_weights=True)
+    idx, _ = big_earth.split_dataset(0)
+    sampler = SubsetRandomSampler(idx)
 
-for batch_idx, (color_ab, _, _, _, _) in \
-        tqdm(enumerate(data_loader), total=len(data_loader)):
+    data_loader = torch.utils.data.DataLoader(
+        big_earth, batch_size=32, sampler=sampler, num_workers=8, drop_last=True
+    )
 
-    img_weights = np.zeros((210, 210), dtype='f')  # possible bins indexes are from -110 to 110
-    # unroll image and stretch it to [-128, 128]
-    img_vec = color_ab.squeeze(0).numpy().reshape(-1)
-    img_vec = img_vec * 128.
+    ####################
+    # CREATING HISTOGRAM
+    curr_dir = os.path.dirname(__file__)
 
-    # extracting A channel and its bin edges
-    img_vec_a = img_vec[:np.prod((64, 64))]
-    binedges_a = binedges[0, ...].reshape(-1)
-    # finding the closest bucket
-    binid_a = [binedges_a.flat[np.abs(binedges_a - v).argmin()] for v in img_vec_a]
-    # extracting B channel and its bin edges
-    img_vec_b = img_vec[np.prod((64, 64)):]
-    binedges_b = binedges[1, ...].reshape(-1)
-    # finding the closest bucket
-    binid_b = [binedges_b.flat[np.abs(binedges_b - v).argmin()] for v in img_vec_b]
+    if not skip_hist:
+        print("going to calculate weights. this could take a while.. QFACTOR:" + str(q_factor))
+        probs = np.zeros((q_factor, q_factor), dtype='f')
+        i = 0
 
-    # updating weights for the closest buckets of this image
-    for v1, v2 in zip(binid_a, binid_b):
-        img_weights[v1.astype('int8'), v2.astype('int8')] = img_weights[v1.astype('int8'), v2.astype('int8')] + 1
+        for batch_idx, (color_ab, _, _, _, _) in \
+                tqdm(enumerate(data_loader), total=len(data_loader)):
 
-    # convert occurrences in probabilities
-    norm_img_weights = img_weights / np.sum(img_weights)
-    # saving this image block of probabilities
-    i = i + 1
-    weights = weights + norm_img_weights
+            # unroll image and stretch it to [-128, 128]
+            img_vec = color_ab.squeeze(0).numpy()
+            img_vec = img_vec * 128.
+            img_vec = np.transpose(img_vec, (1, 2, 3, 0))
+            hist = cv2.calcHist(img_vec, [0, 1], None, [q_factor, q_factor], [-128, 128, -128, 128])
+            norm_hist = hist / np.sum(hist)
+            probs = probs + norm_hist
+            i = i + 1
 
-# mean over all the weights of all the images
-weights = weights / i
-# saving only the values in binedges like the indian guy did
-countbins = np.empty(313, dtype='f')
-for i in range(313):
-    countbins[i] = weights[int(binedges[0, i]), int(binedges[1, i])]
+        probs = probs / i
+        probs[probs == 0] = 1e-09
+        np.save(os.path.join(curr_dir, 'pot_weights/prior_bigearth.npy'), probs)
 
-# assigning negligible value to nevermet-values to avoid division by zero
-# this value won't affect our losses as the get_weights function is linked to the
-# grantruth colors, so if a quantized value is never met its weight will never
-# be loaded from the __get_weights__ function in the dataloader
-countbins[countbins == 0] = 1e-09
+    ###############
+    # CREATING BINS
 
-# saving result probabilities
-np.save('pot_weights/prior_bigearth.npy', countbins)
+    if not skip_edges:
+        print("creating edges array..")
+        binedges = np.ones(q_factor, dtype='f')
+        distance = 128*2 / q_factor
+        for i in range(0, q_factor):
+            binedges[i] = -128 + (distance * i)
+        np.save(os.path.join(curr_dir, 'pot_weights/ab_quantize.npy'), binedges)
