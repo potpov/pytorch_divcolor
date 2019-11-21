@@ -113,7 +113,7 @@ class Losses:
         grad = self.grad_loss(gt, pred)
         return kl, recon_loss, grad, mah
 
-    def cvae_loss(self, pred, gt, lossweights):
+    def cvae_loss(self, pred, gt, lossweights, mu, logvar):
         """
         this encoder loss is not forced to be normal gaussian
         :param pred: predicted color image
@@ -121,9 +121,10 @@ class Losses:
         :param lossweights: weights for colors
         :return:
         """
+        kl_loss = self.kl_loss(mu, logvar)
         recon_loss = self.hist_loss(gt, pred, lossweights)
         # recon_loss_l2 = self.l2_loss(gt, pred)
-        return recon_loss
+        return recon_loss, kl_loss
 
     def get_gmm_coeffs(self, gmm_params):
         """

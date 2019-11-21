@@ -108,9 +108,10 @@ class CVAE(nn.Module):
             z_color = torch.add(mu, torch.mul(eps, stddev))
             z_color = z_color.reshape(-1, self.hidden_size, 1, 1).repeat(1, 1, 4, 4)
             z = z_grey * z_color
+            return self.decoder(z, sc_feat32, sc_feat16, sc_feat8), mu, logvar
         else:
             # z1 is random, we don't have color input on testing!
             z_rand = torch.randn(self.batch_size, self.hidden_size, 1, 1).repeat(1, 1, 4, 4).cuda()
             z = z_grey * z_rand
+            return self.decoder(z, sc_feat32, sc_feat16, sc_feat8), 0, 0
 
-        return self.decoder(z, sc_feat32, sc_feat16, sc_feat8)

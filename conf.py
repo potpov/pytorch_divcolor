@@ -10,7 +10,7 @@ if socket.gethostname() == 'parrot':
 default_conf = {
 
     'DATASET_NAME': 'bigearth',  # dataset type for the experiment: bigearth, lfw, ...
-    'EPOCHS': 10,  # number of epoch to be performed foreach model
+    'EPOCHS': 15,  # number of epoch to be performed foreach model
 
     'TRAIN_MDN': False,  # if train of mdn has to be performed
     'TRAIN_VAE': False,  # if train of vae has to be performed
@@ -34,7 +34,7 @@ default_conf = {
     # end of automatically updated pars
 
     # reload hist weights for the dataset with a quantization coefficient Q_FACTOR
-    'RELOAD_WEIGHTS':  True,
+    'RELOAD_WEIGHTS':  False,
     'WEIGHT_FILENAME': 'delta_2_prior.npy',
     'Q_FACTOR': 26,
     'DELTA_GAUSSIAN': 2,
@@ -72,6 +72,7 @@ default_conf = {
     'HIST_W': 1,   # hist loss -> see colorful colorizations
     'GRA_W': 1e1,  # gradient loss using sobel
 
+    "BANDS": ["B02", "B03", "B04"],
     # original image size
     'IMG_W': 64,
     'IMG_H': 64,

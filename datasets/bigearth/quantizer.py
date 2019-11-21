@@ -13,7 +13,7 @@ def quantization(conf, q_factor=100, skip_hist=False, skip_edges=False):
     #################################
     # loading dataset without weights
 
-    big_earth = BigEarthDataset(conf['BIG_EARTH_CVS_NAME'], conf['BIG_EARTH_QNTL_NAME'], 42, skip_weights=True)
+    big_earth = BigEarthDataset(conf, conf['BIG_EARTH_CVS_NAME'], conf['BIG_EARTH_QNTL_NAME'], 42, skip_weights=True)
     idx, _ = big_earth.split_dataset(0)
     sampler = SubsetRandomSampler(idx)
 

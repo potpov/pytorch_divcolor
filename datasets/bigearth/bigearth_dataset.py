@@ -66,7 +66,7 @@ class BigEarthDataset(Dataset):
         self.quantiles = load_dict_from_json(os.path.join(self.curr_dir, quantiles))
 
         # bands
-        self.bands = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"]
+        self.bands = conf['BANDS']
 
         # configuration file
         self.conf = conf
@@ -85,9 +85,13 @@ class BigEarthDataset(Dataset):
             for filename in glob.iglob(os.path.join(self.curr_dir, imgs_file)+"/*" + b + ".tif"):
                 band = custom_loader(os.path.join(self.curr_dir, filename), b, self.quantiles)
                 imgs_bands.append(band)
-        spectral_img = np.concatenate(imgs_bands, axis=2)
-        spectral_bands, rgb = split_bands(spectral_img)
-        return self.generate_inputs(rgb)
+        if len(self.bands) == 3:
+            rgb = np.concatenate(imgs_bands[::-1], axis=2)  # inverse order for rgb
+            return self.generate_inputs(rgb)
+        else:
+            spectral_img = np.concatenate(imgs_bands, axis=2)
+            spectral_bands, rgb = split_bands(spectral_img)
+            return self.generate_inputs(rgb)
 
     def __len__(self):
         return self.data_len
