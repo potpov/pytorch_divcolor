@@ -10,12 +10,13 @@ if socket.gethostname() == 'parrot':
 default_conf = {
 
     'DATASET_NAME': 'bigearth',  # dataset type for the experiment: bigearth, lfw, ...
+    'EPOCHS': 10,  # number of epoch to be performed foreach model
 
-    'TRAIN_MDN': True,  # if train of mdn has to be performed
-    'TRAIN_VAE': True,  # if train of vae has to be performed
+    'TRAIN_MDN': False,  # if train of mdn has to be performed
+    'TRAIN_VAE': False,  # if train of vae has to be performed
     'TRAIN_CVAE': True,
 
-    'TEST_MDN_VAE': True,
+    'TEST_MDN_VAE': False,
     'TEST_CVAE': True,
 
     # names of dataset files
@@ -34,7 +35,9 @@ default_conf = {
 
     # reload hist weights for the dataset with a quantization coefficient Q_FACTOR
     'RELOAD_WEIGHTS':  True,
-    'Q_FACTOR': 100,
+    'WEIGHT_FILENAME': 'delta_2_prior.npy',
+    'Q_FACTOR': 26,
+    'DELTA_GAUSSIAN': 2,
 
     # experiment results dir
     'OUT_DIR': 'tests/',
@@ -42,7 +45,6 @@ default_conf = {
     'SEED': 42,
     "TEST_SPLIT": 0.2,  # train / dataset %
 
-    'EPOCHS': 3,  # number of epoch to be performed foreach model
     'NTHREADS': 8,  # data-loader workers
     'HIDDENSIZE': 64,  # encoder and mdn output size
     'NMIX': 8,  # number of samples AKA different colorizations for a given image

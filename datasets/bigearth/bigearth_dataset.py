@@ -38,7 +38,7 @@ def split_bands(spectral_img):
 
 
 class BigEarthDataset(Dataset):
-    def __init__(self, csv_path, quantiles, random_seed, skip_weights=False):
+    def __init__(self, conf, csv_path, quantiles, random_seed, skip_weights=False):
         """
         Args:
             csv_path (string): path to csv file containing folder name that contain images
@@ -68,11 +68,14 @@ class BigEarthDataset(Dataset):
         # bands
         self.bands = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"]
 
+        # configuration file
+        self.conf = conf
+
         # histogram weights
         self.skip_weights = skip_weights
         if not skip_weights:
             self.binedges = np.load(os.path.join(self.curr_dir, 'pot_weights/ab_quantize.npy'))
-            self.weights = 1. / np.load(os.path.join(self.curr_dir, 'pot_weights/prior_bigearth.npy'))
+            self.weights = np.load(os.path.join(self.curr_dir, 'pot_weights', self.conf['WEIGHT_FILENAME']))
 
     def __getitem__(self, index):
         # obtain the right folder
@@ -84,7 +87,6 @@ class BigEarthDataset(Dataset):
                 imgs_bands.append(band)
         spectral_img = np.concatenate(imgs_bands, axis=2)
         spectral_bands, rgb = split_bands(spectral_img)
-        # return self.to_tensor(spectral_bands), self.to_tensor(rgb)
         return self.generate_inputs(rgb)
 
     def __len__(self):

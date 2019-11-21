@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 import os
 import numpy as np
+import cv2
 
 
 class Losses:
@@ -151,6 +152,3 @@ class Losses:
         gmm_loss = torch.mean(torch.add(-1*torch.log(gmm_pi_min+1e-30), dist_min))
         gmm_loss_l2 = torch.mean(dist_min)
         return gmm_loss, gmm_loss_l2
-
-
-
