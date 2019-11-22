@@ -30,11 +30,11 @@ class Cvae:
         i = 0
         # warm up conf
         tot_range = len(data_loader) * self.conf['EPOCHS']
-        warm_up = np.ones(shape=(tot_range))
+        warm_up = np.ones(shape=tot_range)
         warm_up[0:int(tot_range * 0.5)] = np.linspace(0, 1, num=(tot_range * 0.5))
 
         for epochs in range(self.checkpoint, self.conf['EPOCHS']):
-            for batch_idx, (input_color, grey_little, batch_weights, _, _) in \
+            for batch_idx, (input_color, grey_little, batch_weights, _) in \
                     tqdm(enumerate(data_loader), total=len(data_loader)):
                 input_color = input_color.cuda()
                 lossweights = batch_weights.cuda()
@@ -64,45 +64,36 @@ class Cvae:
             self.utilities.epoch_checkpoint('CVAE', epochs)
             torch.save(self.cvae.state_dict(), '%s/model_cvae.pth' % self.save_dir)
 
-    def check_train(self, dataloader, writer):
-
-        print("checking if CVAE learn something..")
-        color_ab, grey_little, batch_weights, _, _ = next(iter(dataloader))
-
-        input_color = color_ab.cuda()
-        input_grey = grey_little.cuda()
-
-        color_out, _, _ = self.cvae(color=input_color, greylevel=input_grey)
-
-        self.utilities.dump_results(
-            color=color_out,  # batch of 8 predictions  for AB channels
-            grey=grey_little,  # batch of original grey channel
-            gt=color_ab,  # batch of gt AB channels
-            file_name=1,
-            nmix=1,
-            model_name='check_cvae',
-            tb_writer=writer
-        )
-        print("check done.")
-
     def test(self, data_loader, writer):
         print("starting CVAE testing..")
-        self.cvae.train(False)
-        for batch_idx, (batch, grey_little, batch_weights, _, _) in \
+
+        for batch_idx, (batch, grey_little, batch_weights, _) in \
                 tqdm(enumerate(data_loader), total=len(data_loader)):
 
-            # input_feats = batch_feats.cuda()
+            input_color = batch.cuda()
             input_grey = grey_little.cuda()
 
-            color_out, _, _ = self.cvae(color=None, greylevel=input_grey)
+            # checking result if encoder samples from posterior (gran truth)
+            self.cvae.train(True)
+            posterior, _, _ = self.cvae(color=input_color, greylevel=input_grey)
+            self.cvae.train(False)
+            self.cvae.eval()
+
+            # checking results if encoder samples from prior (NMIX samplings from gaussian)
+            results = []
+            for i in range(self.conf['NMIX']):
+                color_out, _, _ = self.cvae(color=None, greylevel=input_grey)
+                results.append(color_out.unsqueeze(1))
+            results = torch.cat(results, dim=1)
 
             self.utilities.dump_results(
-                color=color_out,  # batch of 8 predictions  for AB channels
+                color=results,  # batch of 8 predictions  for AB channels
                 grey=grey_little,  # batch of original grey channel
                 gt=batch,  # batch of gt AB channels
                 file_name=batch_idx,
-                nmix=1,
+                nmix=self.conf['NMIX'],
                 model_name='results_cvae',
-                tb_writer=writer
+                tb_writer=writer,
+                posterior=posterior
             )
         print("CVAE testing completed")

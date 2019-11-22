@@ -28,14 +28,14 @@ class Mdn:
 
     def train_vae(self, data_loader, writer):
         conf = self.conf
-        print("starting VAE Training for model A")
+        print("starting VAE Training (mdn model)")
         self.vae.train(True)
         optimizer = optim.Adam(self.vae.parameters(), lr=conf['VAE_LR'])
         scheduler = StepLR(optimizer, step_size=conf['SCHED_VAE_STEP'], gamma=conf['SCHED_VAE_GAMMA'])
         i = 0
 
         for epochs in range(self.checkpoint, conf['EPOCHS']):
-            for batch_idx, (input_color, _, weights, _, _) in tqdm(enumerate(data_loader), total=len(data_loader)):
+            for batch_idx, (input_color, _, weights, _) in tqdm(enumerate(data_loader), total=len(data_loader)):
                 # moving to cuda
                 input_color = input_color.cuda()
                 lossweights = weights.cuda()
@@ -94,7 +94,7 @@ class Mdn:
         scheduler = StepLR(optimizer, step_size=self.conf['SCHED_MDN_STEP'], gamma=self.conf['SCHED_MDN_GAMMA'])
         i = 0
         for epochs in range(self.checkpoint, self.conf['EPOCHS']):
-            for batch_idx, (input_color, _, _, _, grey_cropped) in tqdm(enumerate(data_loader), total=len(data_loader)):
+            for batch_idx, (input_color, _, _, grey_cropped) in tqdm(enumerate(data_loader), total=len(data_loader)):
 
                 # moving to cuda
                 input_color = input_color.cuda()
@@ -130,7 +130,7 @@ class Mdn:
         self.mdn.train(False)
         self.vae.eval()
         self.mdn.eval()
-        for batch_idx, (input_color, grey_little, _, _, grey_cropped) in tqdm(enumerate(data_loader),
+        for batch_idx, (input_color, grey_little, _, grey_cropped) in tqdm(enumerate(data_loader),
                                                                               total=len(data_loader)):
             with torch.no_grad():
                 grey_cropped = grey_cropped.cuda()  # grey features
@@ -140,8 +140,8 @@ class Mdn:
 
                 # creating indexes and ordering means according to the gaussian weights Pi
                 pi_indexes = gmm_pi.argsort(dim=1, descending=True)
-                gmm_mu = gmm_mu.reshape(self.conf['BATCHSIZE'], self.conf['NMIX'], self.conf['HIDDENSIZE'])
-                for i in range(self.conf['BATCHSIZE']):
+                gmm_mu = gmm_mu.reshape(self.conf['TEST_BATCHSIZE'], self.conf['NMIX'], self.conf['HIDDENSIZE'])
+                for i in range(self.conf['TEST_BATCHSIZE']):
                     gmm_mu[i, ...] = gmm_mu[i, pi_indexes[i], ...]
 
                 # calculating results foreach sample

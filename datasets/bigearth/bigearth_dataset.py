@@ -20,10 +20,10 @@ def quantiles_std(img, band, quantiles):
 
 
 # function for read, resize and normalize the images
-def custom_loader(path, band, quantiles):
+def custom_loader(path, band, quantiles, size_w, size_h):
     # read the band as it is, with IMREAD_UNCHANGED
     img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
-    img = cv2.resize(img, dsize=(120, 120), interpolation=cv2.INTER_CUBIC)
+    img = cv2.resize(img, dsize=(size_w, size_h), interpolation=cv2.INTER_CUBIC)
     img = quantiles_std(img, band, quantiles)
     w, h = img.shape
     return img.reshape(w, h, 1)
@@ -83,7 +83,13 @@ class BigEarthDataset(Dataset):
         imgs_bands = []
         for b in self.bands:
             for filename in glob.iglob(os.path.join(self.curr_dir, imgs_file)+"/*" + b + ".tif"):
-                band = custom_loader(os.path.join(self.curr_dir, filename), b, self.quantiles)
+                band = custom_loader(
+                    os.path.join(self.curr_dir, filename),
+                    b,
+                    self.quantiles,
+                    self.conf['UP_W'],
+                    self.conf['UP_H']
+                )
                 imgs_bands.append(band)
         if len(self.bands) == 3:
             rgb = np.concatenate(imgs_bands[::-1], axis=2)  # inverse order for rgb
@@ -119,7 +125,6 @@ class BigEarthDataset(Dataset):
         """
         color_ab = np.zeros((2, 64, 64), dtype='f')
         grey_little = np.zeros((1, 64, 64), dtype='f')
-        grey_big = np.zeros((1, 256, 256), dtype='f')
         grey_cropped = np.zeros((1, 224, 224), dtype='f')
 
         # converting original image to CIELAB
@@ -127,14 +132,12 @@ class BigEarthDataset(Dataset):
         img_lab = ((img_lab * 2.) / 255.) - 1.
 
         # creating scaled versions of the image
-        img_big = cv2.resize(img_lab, (256, 256))
         img_little = cv2.resize(img_lab, (64, 64))
         img_cropped = cv2.resize(img_lab, (224, 224))
 
         # copying grey scale layers
         grey_cropped[0, :, :] = img_cropped[..., 0]
         grey_little[0, :, :] = img_little[..., 0]
-        grey_big[0, :, :] = img_big[..., 0]
 
         # copying color layers
         color_ab[0, :, :] = img_little[..., 1].reshape(1, 64, 64)
@@ -145,7 +148,7 @@ class BigEarthDataset(Dataset):
         if not self.skip_weights:
             weights = self.__getweights__(color_ab)
 
-        return color_ab, grey_little, weights, grey_big, grey_cropped
+        return color_ab, grey_little, weights, grey_cropped
 
     def __getweights__(self, img):
         """

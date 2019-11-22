@@ -22,8 +22,8 @@ class Losses:
         pcvec = torch.from_numpy(np_pcvec[:, :self.conf['PCA_COMP_NUMBER']]).cuda()
         pcvar = torch.from_numpy(np_pcvar[:self.conf['PCA_COMP_NUMBER']]).cuda()
 
-        proj_gt = torch.mm(gt.reshape(32, -1), pcvec)
-        proj_pred = torch.mm(pred.reshape(32, -1), pcvec)
+        proj_gt = torch.mm(gt.reshape(self.conf['BATCHSIZE'], -1), pcvec)
+        proj_pred = torch.mm(pred.reshape(self.conf['BATCHSIZE'], -1), pcvec)
         pca_loss = torch.mean(
             torch.sum(
                 (proj_gt - proj_pred)**2 / pcvar, dim=1
@@ -34,8 +34,8 @@ class Losses:
         gt_err = gt
         pred_err = pred
         for i in range(self.conf['PCA_COMP_NUMBER']):
-            gt_err = gt_err.reshape(32, -1) - torch.mm(torch.mm(gt.reshape(32, -1), pcvec), torch.t(pcvec))
-            pred_err = pred_err.reshape(32, -1) - torch.mm(torch.mm(pred.reshape(32, -1), pcvec), torch.t(pcvec))
+            gt_err = gt_err.reshape(self.conf['BATCHSIZE'], -1) - torch.mm(torch.mm(gt.reshape(self.conf['BATCHSIZE'], -1), pcvec), torch.t(pcvec))
+            pred_err = pred_err.reshape(self.conf['BATCHSIZE'], -1) - torch.mm(torch.mm(pred.reshape(self.conf['BATCHSIZE'], -1), pcvec), torch.t(pcvec))
         res_loss = torch.mean(
             torch.sum(
                 (gt_err - pred_err) ** 2 / (pcvar[self.conf['PCA_COMP_NUMBER'] - 1] ** 2), dim=1

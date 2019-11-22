@@ -15,14 +15,15 @@ default_conf = {
     'DATASET_NAME': 'bigearth',  # dataset type for the experiment: bigearth, lfw, ...
     'EPOCHS': 2,  # number of epoch to be performed foreach model
     # reload hist weights for the dataset with a quantization coefficient Q_FACTOR
-    'RELOAD_WEIGHTS': True,
     'BATCHSIZE': 64,
+    'TEST_BATCHSIZE': 12,
     # weight stuff
+    'RELOAD_WEIGHTS': True,
     'WEIGHT_FILENAME': 'delta_2_prior.npy',
     'Q_FACTOR': 26,
     'DELTA_GAUSSIAN': 2,
     'LAMDA': 0.5,
-
+    'NMIX': 4,  # number of samples AKA different colorizations for a given image
 
     #########
     # CVAE PARAMS
@@ -36,9 +37,9 @@ default_conf = {
     ########
     # MDN PARAMS
 
-    'TRAIN_MDN': False,  # if train of mdn has to be performed
-    'TRAIN_VAE': False,  # if train of vae has to be performed
-    'TEST_MDN_VAE': False,
+    'TRAIN_MDN': True,  # if train of mdn has to be performed
+    'TRAIN_VAE': True,  # if train of vae has to be performed
+    'TEST_MDN_VAE': True,
 
     'VAE_LR': 5e-5,  # VAE learning rate
     'MDN_LR': 1e-3,  # MDN learning rate
@@ -47,7 +48,6 @@ default_conf = {
     'MDN_EPOCH_CHECKPOINT': 0,
     'LOAD_MDN': False,
     'LOAD_VAE': False,
-    'NMIX': 8,  # number of samples AKA different colorizations for a given image
 
     # weights for MDN-VAE losses
     'KL_W': 1e-2,  # kl divergence
@@ -85,6 +85,6 @@ default_conf = {
     'IMG_W': 64,
     'IMG_H': 64,
     # scaled image size
-    'SCALED_W': 64,
-    'SCALED_H': 64,
+    'UP_W': 64,
+    'UP_H': 64,
 }

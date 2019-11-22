@@ -7,9 +7,8 @@ class MDN(nn.Module):
     def __init__(self, conf):
         super(MDN, self).__init__()
 
-        self.feats_nch = 512
         self.hidden_size = conf['HIDDENSIZE']
-        self.nmix = 8
+        self.nmix = conf['NMIX']
         self.nout = (self.hidden_size+1)*self.nmix
 
         # COLORIZATION NET PART

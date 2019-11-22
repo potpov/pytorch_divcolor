@@ -95,21 +95,24 @@ class Utilities:
         # BIG EARTH DATA LOADER
         if self.dataset_name == 'bigearth':
 
-            big_earth = BigEarthDataset(self.conf, self.conf['BIG_EARTH_CVS_NAME'], self.conf['BIG_EARTH_QNTL_NAME'], 42)
+            big_earth = BigEarthDataset(self.conf, self.conf['BIG_EARTH_CVS_NAME'], self.conf['BIG_EARTH_QNTL_NAME'],
+                                        42)
             train_idx, test_idx = big_earth.split_dataset(0.2)
 
             if split == 'train':
                 sampler = SubsetRandomSampler(train_idx)
+                batchsize = self.conf['BATCHSIZE']
             else:
                 sampler = SubsetRandomSampler(test_idx)
+                batchsize = self.conf['TEST_BATCHSIZE']
 
             data_loader = torch.utils.data.DataLoader(
-                    big_earth,
-                    batch_size=self.conf['BATCHSIZE'],
-                    sampler=sampler,
-                    num_workers=self.conf['NTHREADS'],
-                    drop_last=True
-                )
+                big_earth,
+                batch_size=batchsize,
+                sampler=sampler,
+                num_workers=self.conf['NTHREADS'],
+                drop_last=True
+            )
             return data_loader
 
         # LFW DATA LOADER
@@ -147,7 +150,28 @@ class Utilities:
         img_dec[img_dec > 255.] = 255.
         return img_dec.type(torch.uint8)
 
-    def dump_results(self, color, grey, gt, nmix, model_name, file_name='result', tb_writer=None):
+    def generate_header(self, bordershape, with_posterior=True):
+        font = cv2.FONT_HERSHEY_SIMPLEX
+
+        column = 2 + self.conf['NMIX'] if with_posterior else 1 + self.conf['NMIX']
+        borders = 2 * bordershape if with_posterior else bordershape
+        header = 255 * np.ones((40, self.conf['IMG_W'] * column + borders, 3))
+
+        # print gt same for both cases
+        cv2.putText(header, 'GT', (10, 25), font, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
+
+        if with_posterior:
+            cv2.putText(header, 'posterior', (self.conf['IMG_W'] + bordershape, 25), font, 0.5, (0, 0, 0), 2,
+                        cv2.LINE_AA)
+            cv2.putText(header, 'samples',
+                        ((2 + int(self.conf['NMIX'] / 2)) * self.conf['IMG_W'] + 2 * bordershape, 25),
+                        font, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
+        else:
+            cv2.putText(header, 'samples', (self.conf['IMG_W'] + bordershape, 25), font, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
+
+        return header
+
+    def dump_results(self, color, grey, gt, nmix, model_name, file_name='result', tb_writer=None, posterior=None):
         """
         :param color: network output 32x(8)x2x64x64
         :param grey: grey input 32x64x64
@@ -156,12 +180,14 @@ class Utilities:
         :param model_name: {mdn|cvae}
         :param file_name: name of the new image
         :param tb_writer: tensorboardX writer
+        :param posterior: output image if decoder sample from posterior
         """
 
         # here we print the output image for the entire batch (in pieces)
-        net_result = np.zeros((self.conf['BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 3), dtype='uint8')
-        border_img = 255 * np.ones((self.conf['BATCHSIZE'] * self.conf['IMG_H'], 128, 3))  # border
-        # gt_print = np.zeros((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W'], 3))
+        net_result = np.zeros((self.conf['TEST_BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 3),
+                              dtype='uint8')
+        # black stripe between sections
+        border_img = 0 * np.ones((self.conf['TEST_BATCHSIZE'] * self.conf['IMG_H'], 10, 3))
 
         # restoring previous shapes and formats
         # color = (F.interpolate(color, size=(2, self.conf['IMG_H'], self.conf['IMG_W'])))
@@ -169,16 +195,17 @@ class Utilities:
         # gt = (F.interpolate(gt, size=(self.conf['IMG_H'], self.conf['IMG_W'])))
 
         # swap axes and reshape layers to fit correct format when reshaping
-        grey = grey.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W']))
+        grey = grey.reshape((self.conf['TEST_BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W']))
 
-        if nmix != 1:  # CVAE case where we haven't multiple samplings
+        if nmix != 1:
             color = color.permute((0, 3, 1, 4, 2))
         else:
+            color = color.squeeze(1)
             color = color.permute((0, 2, 3, 1))
 
-        color = color.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 2))
+        color = color.reshape((self.conf['TEST_BATCHSIZE'] * self.conf['IMG_H'], nmix * self.conf['IMG_W'], 2))
         gt = gt.permute((0, 2, 3, 1))
-        gt = gt.reshape((self.conf['BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W'], 2))
+        gt = gt.reshape((self.conf['TEST_BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W'], 2))
 
         # LAB -> RGB
         gt_print = cv2.merge((self.restore(grey).data.numpy(), self.restore(gt).data.numpy()))
@@ -187,8 +214,20 @@ class Utilities:
         gt_print = cv2.cvtColor(gt_print, cv2.COLOR_LAB2BGR)
         net_result = cv2.cvtColor(net_result, cv2.COLOR_LAB2BGR)
 
-        out_fn_pred = os.path.join(self.save_dir, model_name, str(file_name)+'.jpg')
-        result_image = np.concatenate((net_result, border_img, gt_print), axis=1)
+        if posterior is not None:
+            # one more colomn for posterior
+            posterior = posterior.permute((0, 2, 3, 1))
+            posterior = posterior.reshape((self.conf['TEST_BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W'], 2))
+            posterior = cv2.merge((self.restore(grey).data.numpy(), self.restore(posterior).cpu().data.numpy()))
+            posterior = cv2.cvtColor(posterior, cv2.COLOR_LAB2BGR)
+            result_image = np.concatenate((gt_print, border_img, posterior, border_img, net_result), axis=1)
+        else:
+            result_image = np.concatenate((gt_print, border_img, net_result), axis=1)
+
+        header = self.generate_header(border_img.shape[1], with_posterior=(posterior is not None))
+        result_image = np.concatenate((header, result_image), axis=0)
+
+        out_fn_pred = os.path.join(self.save_dir, model_name, str(file_name) + '.jpg')
         cv2.imwrite(out_fn_pred, result_image)
 
         # saving path for tensorboard will be something like mdn/result on iteration == batch idx

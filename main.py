@@ -50,11 +50,10 @@ def train(utilities, exp_title):
         cvae.load_weights()
     if utilities.conf['TRAIN_CVAE']:
         cvae.train(train_loader, writer)
-        cvae.check_train(train_loader, writer)
     if utilities.conf['TEST_CVAE']:
         cvae.test(test_loader, writer)
 
-    utilities.test_complete()
+    # utilities.test_complete()
 
 
 if __name__ == '__main__':

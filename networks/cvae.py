@@ -9,7 +9,7 @@ class CVAE(nn.Module):
     def __init__(self, conf):
         super(CVAE, self).__init__()
         self.hidden_size = conf['HIDDENSIZE']
-        self.batch_size = conf['BATCHSIZE']
+        self.train_batch_size = conf['TEST_BATCHSIZE']
 
         # Encoder layers
         self.enc_conv1 = nn.Conv2d(2, 128, 5, stride=2, padding=2)
@@ -37,10 +37,10 @@ class CVAE(nn.Module):
         self.dec_conv1 = nn.Conv2d(512 + self.hidden_size, 256, 5, stride=1, padding=2)  # 512 (skips) + z (color emb)
         self.dec_bn1 = nn.BatchNorm2d(256)
         self.dec_upsamp2 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-        self.dec_conv2 = nn.Conv2d(256 * 2, 128, 5, stride=1, padding=2)  # 256 (out) + 256 (skips)
+        self.dec_conv2 = nn.Conv2d(512, 128, 5, stride=1, padding=2)  # 256 (out) + 256 (skips)
         self.dec_bn2 = nn.BatchNorm2d(128)
         self.dec_upsamp3 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-        self.dec_conv3 = nn.Conv2d(128 * 2, 64, 5, stride=1, padding=2)  # 128 (out) + 128 (skips)
+        self.dec_conv3 = nn.Conv2d(256, 64, 5, stride=1, padding=2)  # 128 (out) + 128 (skips)
         self.dec_bn3 = nn.BatchNorm2d(64)
         self.dec_upsamp4 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         self.dec_conv4 = nn.Conv2d(64, 64, 5, stride=1, padding=2)  # final shape 64 x 64 x 2 (ab channels)
@@ -70,7 +70,8 @@ class CVAE(nn.Module):
         sc_feat16 = self.cond_enc_bn2(x)
         x = F.relu(self.cond_enc_conv3(sc_feat16))
         sc_feat8 = self.cond_enc_bn3(x)
-        z = F.relu(self.cond_enc_conv4(sc_feat8))
+        # z = F.relu(self.cond_enc_conv4(sc_feat8))
+        z = self.cond_enc_conv4(sc_feat8)
         return sc_feat32, sc_feat16, sc_feat8, z
 
     def decoder(self, z, sc_feat32, sc_feat16, sc_feat8):
@@ -115,7 +116,7 @@ class CVAE(nn.Module):
             return self.decoder(z, sc_feat32, sc_feat16, sc_feat8), mu, logvar
         else:
             # z1 is random, we don't have color input on testing!
-            z_rand = torch.randn(self.batch_size, self.hidden_size, 1, 1).repeat(1, 1, 4, 4).cuda()
+            z_rand = torch.randn(self.train_batch_size, self.hidden_size, 1, 1).repeat(1, 1, 4, 4).cuda()
             z = z_grey * z_rand
             return self.decoder(z, sc_feat32, sc_feat16, sc_feat8), 0, 0
 
