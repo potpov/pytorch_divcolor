@@ -78,9 +78,9 @@ class Cvae:
             color=color_out,  # batch of 8 predictions  for AB channels
             grey=grey_little,  # batch of original grey channel
             gt=color_ab,  # batch of gt AB channels
-            file_name=9999,
+            file_name=1,
             nmix=1,
-            model_name='results_cvae',
+            model_name='check_cvae',
             tb_writer=writer
         )
         print("check done.")
