@@ -43,7 +43,9 @@ class CVAE(nn.Module):
         self.dec_conv3 = nn.Conv2d(128 * 2, 64, 5, stride=1, padding=2)  # 128 (out) + 128 (skips)
         self.dec_bn3 = nn.BatchNorm2d(64)
         self.dec_upsamp4 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-        self.dec_conv4 = nn.Conv2d(64, 2, 5, stride=1, padding=2)  # final shape 64 x 64 x 2 (ab channels)
+        self.dec_conv4 = nn.Conv2d(64, 64, 5, stride=1, padding=2)  # final shape 64 x 64 x 2 (ab channels)
+        self.dec_bn4 = nn.BatchNorm2d(64)
+        self.final_conv = nn.Conv2d(64, 2, 1, stride=1, padding=0)
 
     def encoder(self, x):
         x = F.relu(self.enc_conv1(x))
@@ -87,6 +89,8 @@ class CVAE(nn.Module):
         x = self.dec_bn3(x)
         x = self.dec_upsamp4(x)
         x = F.relu(self.dec_conv4(x))
+        x = self.dec_bn4(x)
+        x = self.final_conv(x)
         return x
 
     def forward(self, color, greylevel):

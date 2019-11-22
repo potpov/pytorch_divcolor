@@ -22,9 +22,9 @@ class Utilities:
         :param load_dir: name of the folder in the experiment dir
         :return: new experiment dir or loaded experiment dir
         """
+        datalog = str(datetime.datetime.now()).replace(' ', '_')
         if not load_dir:  # NEW EXPERIMENT
             # generating unique name for the experiment folder
-            datalog = str(datetime.datetime.now()).replace(' ', '_')
             save_dir = os.path.join(default_conf['OUT_DIR'], dataset_name, datalog)
 
             # creating folders for model, config and results
@@ -37,11 +37,7 @@ class Utilities:
             # dump configuration file
             with open(os.path.join(save_dir, 'config.json'), "w") as write_file:
                 json.dump(default_conf, write_file, indent=4)
-
-            # saving class attributes
-            self.save_dir = save_dir
             self.conf = default_conf
-            self.dataset_name = dataset_name
 
         else:  # LOADING PREVIOUS EXPERIMENT
             save_dir = os.path.join(default_conf['OUT_DIR'], dataset_name, load_dir)
@@ -55,11 +51,12 @@ class Utilities:
                 os.mkdir(os.path.join(save_dir, 'results_mdn'))
             if config['TEST_CVAE'] and not os.path.isdir(os.path.join(save_dir, 'results_cvae')):
                 os.mkdir(os.path.join(save_dir, 'results_cvae'))
-
-            # saving class attributes
-            self.save_dir = save_dir
             self.conf = config
-            self.dataset_name = dataset_name
+
+        # saving class attributes
+        self.datalog = datalog
+        self.save_dir = save_dir
+        self.dataset_name = dataset_name
 
     def epoch_checkpoint(self, model, epoch):
         """
@@ -79,14 +76,15 @@ class Utilities:
             raise Exception('invalid model in epoch checkpoint!')
         # saving the new configuration
         with open(os.path.join(self.save_dir, 'config.json'), "w") as write_file:
-            json.dump(default_conf, write_file, indent=4)
+            json.dump(self.conf, write_file, indent=4)
 
     def test_complete(self):
         self.conf['LOAD_CVAE'] = False
         self.conf['LOAD_MDN'] = False
         self.conf['LOAD_VAE'] = False
+        self.conf['EXPERIMENT_DATE'] = self.datalog
         with open(os.path.join(self.save_dir, 'config.json'), "w") as write_file:
-            json.dump(default_conf, write_file, indent=4)
+            json.dump(self.conf, write_file, indent=4)
 
     def load_data(self, split):
         """

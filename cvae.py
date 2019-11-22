@@ -4,6 +4,7 @@ import torch.optim as optim
 from tqdm import tqdm
 from loss import Losses
 import os
+import numpy as np
 
 class Cvae:
 
@@ -27,6 +28,11 @@ class Cvae:
         self.cvae.train(True)
         optimizer = optim.Adam(self.cvae.parameters(), lr=self.conf['CVAE_LR'])
         i = 0
+        # warm up conf
+        tot_range = len(data_loader) * self.conf['EPOCHS']
+        warm_up = np.ones(shape=(tot_range))
+        warm_up[0:int(tot_range * 0.5)] = np.linspace(0, 1, num=(tot_range * 0.5))
+
         for epochs in range(self.checkpoint, self.conf['EPOCHS']):
             for batch_idx, (input_color, grey_little, batch_weights, _, _) in \
                     tqdm(enumerate(data_loader), total=len(data_loader)):
@@ -45,7 +51,7 @@ class Cvae:
                     mu,
                     logvar
                 )
-                loss = hist_loss + kl_loss
+                loss = hist_loss + kl_loss.mul(warm_up[i])
 
                 # log loss
                 writer.add_scalar('CVAE/prior', kl_loss.item(), i)

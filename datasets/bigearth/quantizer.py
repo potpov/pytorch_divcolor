@@ -8,7 +8,7 @@ import os
 from scipy.ndimage import gaussian_filter
 
 
-def quantization(conf, q_factor=100, skip_hist=False, skip_edges=False):
+def quantization(conf, q_factor=100, skip_hist=False):
 
     #################################
     # loading dataset without weights
@@ -47,18 +47,15 @@ def quantization(conf, q_factor=100, skip_hist=False, skip_edges=False):
             img_vec = np.reshape(img_vec, (-1, 2))
             img_a_ch, img_b_ch = img_vec[:, 0], img_vec[:, 1]
             hist = np.histogram2d(img_a_ch, img_b_ch, bins=binedges)[0]
-            # imgs = [img_vec[i] for i in range(img_vec.shape[0])]
-            # hist = cv2.calcHist(imgs, [0, 1], None, [q_factor, q_factor], [-128, 128, -128, 128])
             tot_hist = tot_hist + hist
 
-        # gamut = np.array(tot_hist)
-        # gamut[gamut > 0.] = 1
-        # plt.imshow(gamut)
-        # plt.show()
+        # hist to probs
         probs = tot_hist / np.sum(tot_hist)
+        # smoothing probs
         probs_gauss = gaussian_filter(probs, sigma=conf['DELTA_GAUSSIAN'])
+        # blend with uniform prob
         uniform = np.ones_like(probs, dtype=probs.dtype)*(1/(probs.shape[0]**2))
-        probs = 0.5*probs_gauss + 0.5*uniform
+        probs = conf['LAMDA'] * probs_gauss + (1-conf['LAMDA']) * uniform
         # calculate and norm weights
         weights = 1/probs
         w_avg = np.sum(probs_gauss * weights)
@@ -69,7 +66,7 @@ def quantization(conf, q_factor=100, skip_hist=False, skip_edges=False):
             (np.max(weights) - np.min(weights)) / (w_avg - np.min(weights)),
             -0.1 * (np.max(weights)-w_avg) / (w_avg - np.min(weights))
         )
-        # norm
+        # final normalization
         new_weights = 0.1 + ((weights - np.min(weights)) * (b - 0.1)) / (np.max(weights)-np.min(weights))
-        # saving for dataloader
+        # saving weights for dataloader
         np.save(os.path.join(curr_dir, 'pot_weights', conf['WEIGHT_FILENAME']), new_weights)
