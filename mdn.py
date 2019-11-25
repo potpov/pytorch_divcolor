@@ -58,7 +58,7 @@ class Mdn:
                     kl_loss.mul(conf['KL_W']),
                     hist_loss.mul(conf['HIST_W']),
                     grad_loss.mul(conf['GRA_W']),
-                    mah_loss.mul(conf['MAH_W'])
+                    # mah_loss.mul(conf['MAH_W'])
                 ]
                 )
 

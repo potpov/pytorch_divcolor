@@ -11,7 +11,9 @@ class VAE(nn.Module):
         self.hidden_size = conf['HIDDENSIZE']
 
         # Encoder layers
-        self.enc_conv1 = nn.Conv2d(2, 128, 5, stride=2, padding=2)
+        self.enc_conv0 = nn.Conv2d(2, 64, 5, stride=2, padding=2)
+        self.enc_bn0 = nn.BatchNorm2d(64)
+        self.enc_conv1 = nn.Conv2d(64, 128, 5, stride=2, padding=2)
         self.enc_bn1 = nn.BatchNorm2d(128)
         self.enc_conv2 = nn.Conv2d(128, 256, 5, stride=2, padding=2)
         self.enc_bn2 = nn.BatchNorm2d(256)
@@ -20,7 +22,6 @@ class VAE(nn.Module):
         self.enc_conv4 = nn.Conv2d(512, 1024, 3, stride=2, padding=1)
         self.enc_bn4 = nn.BatchNorm2d(1024)
         self.enc_fc1 = nn.Linear(4*4*1024, self.hidden_size * 2)
-        self.enc_dropout1 = nn.Dropout(p=.7)
 
         # Decoder layers
         self.dec_upsamp0 = nn.Upsample(scale_factor=4, mode='bilinear', align_corners=True)
@@ -36,9 +37,14 @@ class VAE(nn.Module):
         self.dec_conv3 = nn.Conv2d(256, 128, 5, stride=1, padding=2)
         self.dec_bn3 = nn.BatchNorm2d(128)  # 32 x 32 x 128
         self.dec_upsamp4 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-        self.dec_conv4 = nn.Conv2d(128, 2, 5, stride=1, padding=2)  # 64 x 64 x 2 final shape
+        self.dec_conv4 = nn.Conv2d(128, 64, 5, stride=1, padding=2)  # 64 x 64 x 64
+        self.dec_bn4 = nn.BatchNorm2d(64)
+        self.dec_upsamp5 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        self.dec_conv5 = nn.Conv2d(64, 2, 5, stride=1, padding=2)  # 128 x 128x 2 final shape
 
     def encoder(self, x):
+        x = F.relu(self.enc_conv0(x))
+        x = self.enc_bn0(x)
         x = F.relu(self.enc_conv1(x))
         x = self.enc_bn1(x)
         x = F.relu(self.enc_conv2(x))
@@ -48,7 +54,6 @@ class VAE(nn.Module):
         x = F.relu(self.enc_conv4(x))
         x = self.enc_bn4(x)
         x = x.view(-1, 4*4*1024)
-        x = self.enc_dropout1(x)
         x = self.enc_fc1(x)
         mu = x[..., :self.hidden_size]
         logvar = x[..., self.hidden_size:]
@@ -69,7 +74,10 @@ class VAE(nn.Module):
         x = F.relu(self.dec_conv3(x))
         x = self.dec_bn3(x)  # 32 x 32 x 128
         x = self.dec_upsamp4(x)
-        x = torch.tanh(self.dec_conv4(x))  # 64 x 64 x 2 final shape
+        x = F.relu(self.dec_conv4(x))  # 64 x 64 x 64
+        x = self.dec_bn4(x)
+        x = self.dec_upsamp5(x)  # 128 x 128 x 64
+        x = torch.tanh(self.dec_conv5(x))  # 128 x 128 x 2 final shape
         return x
 
     #  define forward pass

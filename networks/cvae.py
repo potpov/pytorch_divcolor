@@ -12,7 +12,9 @@ class CVAE(nn.Module):
         self.train_batch_size = conf['TEST_BATCHSIZE']
 
         # Encoder layers
-        self.enc_conv1 = nn.Conv2d(2, 128, 5, stride=2, padding=2)
+        self.enc_conv0 = nn.Conv2d(2, 64, 5, stride=2, padding=2)
+        self.enc_bn0 = nn.BatchNorm2d(64)
+        self.enc_conv1 = nn.Conv2d(64, 128, 5, stride=2, padding=2)
         self.enc_bn1 = nn.BatchNorm2d(128)
         self.enc_conv2 = nn.Conv2d(128, 256, 5, stride=2, padding=2)
         self.enc_bn2 = nn.BatchNorm2d(256)
@@ -24,7 +26,9 @@ class CVAE(nn.Module):
         # self.enc_dropout1 = nn.Dropout(p=.7)
 
         # Cond encoder layers
-        self.cond_enc_conv1 = nn.Conv2d(1, 128, 5, stride=2, padding=2)
+        self.cond_enc_conv0 = nn.Conv2d(1, 64, 5, stride=2, padding=2)
+        self.cond_enc_bn0 = nn.BatchNorm2d(64)
+        self.cond_enc_conv1 = nn.Conv2d(64, 128, 5, stride=2, padding=2)
         self.cond_enc_bn1 = nn.BatchNorm2d(128)
         self.cond_enc_conv2 = nn.Conv2d(128, 256, 5, stride=2, padding=2)
         self.cond_enc_bn2 = nn.BatchNorm2d(256)
@@ -43,11 +47,18 @@ class CVAE(nn.Module):
         self.dec_conv3 = nn.Conv2d(256, 64, 5, stride=1, padding=2)  # 128 (out) + 128 (skips)
         self.dec_bn3 = nn.BatchNorm2d(64)
         self.dec_upsamp4 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-        self.dec_conv4 = nn.Conv2d(64, 64, 5, stride=1, padding=2)  # final shape 64 x 64 x 2 (ab channels)
+        self.dec_conv4 = nn.Conv2d(128, 64, 5, stride=1, padding=2)  # final shape 64 x 64 x 2 (ab channels)
         self.dec_bn4 = nn.BatchNorm2d(64)
+        self.dec_upsamp5 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         self.final_conv = nn.Conv2d(64, 2, 1, stride=1, padding=0)
 
     def encoder(self, x):
+        """
+        :param x: AB COLOR IMAGE, shape: 2 x imgw x imgh
+        :return: mu and log var for the hidden space
+        """
+        x = F.relu(self.enc_conv0(x))
+        x = self.enc_bn0(x)
         x = F.relu(self.enc_conv1(x))
         x = self.enc_bn1(x)
         x = F.relu(self.enc_conv2(x))
@@ -64,6 +75,12 @@ class CVAE(nn.Module):
         return mu, logvar
 
     def cond_encoder(self, x):
+        """
+        :param x: GREY LEVEL IMAGE. shape: 1 x imgw x imgh
+        :return: skip activations + z hidden size
+        """
+        x = F.relu(self.cond_enc_conv0(x))
+        sc_feat64 = self.cond_enc_bn0(x)
         x = F.relu(self.cond_enc_conv1(x))
         sc_feat32 = self.cond_enc_bn1(x)
         x = F.relu(self.cond_enc_conv2(sc_feat32))
@@ -72,10 +89,9 @@ class CVAE(nn.Module):
         sc_feat8 = self.cond_enc_bn3(x)
         # z = F.relu(self.cond_enc_conv4(sc_feat8))
         z = self.cond_enc_conv4(sc_feat8)
-        return sc_feat32, sc_feat16, sc_feat8, z
+        return sc_feat64, sc_feat32, sc_feat16, sc_feat8, z
 
-    def decoder(self, z, sc_feat32, sc_feat16, sc_feat8):
-        # x = z.view(-1, self.hidden_size, 1, 1)
+    def decoder(self, z, sc_feat64, sc_feat32, sc_feat16, sc_feat8):
         x = self.dec_upsamp1(z)
         x = torch.cat([x, sc_feat8], 1)
         x = F.relu(self.dec_conv1(x))
@@ -89,8 +105,11 @@ class CVAE(nn.Module):
         x = F.relu(self.dec_conv3(x))
         x = self.dec_bn3(x)
         x = self.dec_upsamp4(x)
+        x = torch.cat([x, sc_feat64], 1)
         x = F.relu(self.dec_conv4(x))
         x = self.dec_bn4(x)
+        x = self.dec_upsamp5(x)
+
         x = self.final_conv(x)
         return x
 
@@ -105,7 +124,7 @@ class CVAE(nn.Module):
         :param greylevel: L channel
         :return: predicted AB channel
         """
-        sc_feat32, sc_feat16, sc_feat8, z_grey = self.cond_encoder(greylevel)
+        sc_feat64, sc_feat32, sc_feat16, sc_feat8, z_grey = self.cond_encoder(greylevel)
         if self.training:
             mu, logvar = self.encoder(color)
             stddev = torch.sqrt(torch.exp(logvar))
@@ -113,10 +132,10 @@ class CVAE(nn.Module):
             z_color = torch.add(mu, torch.mul(eps, stddev))
             z_color = z_color.reshape(-1, self.hidden_size, 1, 1).repeat(1, 1, 4, 4)
             z = z_grey * z_color
-            return self.decoder(z, sc_feat32, sc_feat16, sc_feat8), mu, logvar
+            return self.decoder(z, sc_feat64, sc_feat32, sc_feat16, sc_feat8), mu, logvar
         else:
             # z1 is random, we don't have color input on testing!
             z_rand = torch.randn(self.train_batch_size, self.hidden_size, 1, 1).repeat(1, 1, 4, 4).cuda()
             z = z_grey * z_rand
-            return self.decoder(z, sc_feat32, sc_feat16, sc_feat8), 0, 0
+            return self.decoder(z, sc_feat64, sc_feat32, sc_feat16, sc_feat8), 0, 0
 

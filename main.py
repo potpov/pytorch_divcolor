@@ -5,7 +5,6 @@ from utilities import Utilities
 import time
 import argparse
 from tensorboardX import SummaryWriter
-import pathlib
 
 
 parser = argparse.ArgumentParser(description="colorization model")
@@ -16,7 +15,7 @@ args = parser.parse_args()
 def train(utilities, exp_title):
 
     # tensor-board log
-    logs_dir = pathlib.Path(__file__).parent / 'runs' / '{}'.format(exp_title)
+    logs_dir = utilities.conf['TENSORBOARD_DIR'] / 'runs' / '{}'.format(exp_title)
     logs_dir.mkdir(parents=True, exist_ok=True)
     writer = SummaryWriter(logs_dir)
 
@@ -24,7 +23,7 @@ def train(utilities, exp_title):
     if utilities.conf['RELOAD_WEIGHTS']:
         utilities.reload_weights()
 
-    train_loader = utilities.load_data('train')
+    train_loader = utilities.load_data('train', writer)
     test_loader = utilities.load_data('test')
 
     ###########

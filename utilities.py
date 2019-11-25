@@ -86,7 +86,7 @@ class Utilities:
         with open(os.path.join(self.save_dir, 'config.json'), "w") as write_file:
             json.dump(self.conf, write_file, indent=4)
 
-    def load_data(self, split):
+    def load_data(self, split, writer=None):
         """
         generate dataloader according to the dataset
         :param split: {train|test}
@@ -95,8 +95,13 @@ class Utilities:
         # BIG EARTH DATA LOADER
         if self.dataset_name == 'bigearth':
 
-            big_earth = BigEarthDataset(self.conf, self.conf['BIG_EARTH_CVS_NAME'], self.conf['BIG_EARTH_QNTL_NAME'],
-                                        42)
+            big_earth = BigEarthDataset(
+                self.conf,
+                self.conf['BIG_EARTH_CVS_NAME'],
+                self.conf['BIG_EARTH_QNTL_NAME'],
+                42,
+                writer
+            )
             train_idx, test_idx = big_earth.split_dataset(0.2)
 
             if split == 'train':
@@ -111,7 +116,7 @@ class Utilities:
                 batch_size=batchsize,
                 sampler=sampler,
                 num_workers=self.conf['NTHREADS'],
-                drop_last=True
+                drop_last=True,
             )
             return data_loader
 
@@ -188,11 +193,6 @@ class Utilities:
                               dtype='uint8')
         # black stripe between sections
         border_img = 0 * np.ones((self.conf['TEST_BATCHSIZE'] * self.conf['IMG_H'], 10, 3))
-
-        # restoring previous shapes and formats
-        # color = (F.interpolate(color, size=(2, self.conf['IMG_H'], self.conf['IMG_W'])))
-        # grey = (F.interpolate(grey, size=(self.conf['IMG_H'], self.conf['IMG_W'])))
-        # gt = (F.interpolate(gt, size=(self.conf['IMG_H'], self.conf['IMG_W'])))
 
         # swap axes and reshape layers to fit correct format when reshaping
         grey = grey.reshape((self.conf['TEST_BATCHSIZE'] * self.conf['IMG_H'], self.conf['IMG_W']))

@@ -2,7 +2,6 @@ import torch
 import torch.nn.functional as F
 import os
 import numpy as np
-import cv2
 
 
 class Losses:
@@ -81,8 +80,8 @@ class Losses:
         :param pred: predicted color image
         :return: loss, weighted according to the probability of each color
         """
-        gt = gt.view(-1, 64 * 64 * 2)
-        pred = pred.view(-1, 64 * 64 * 2)
+        gt = gt.view(-1, self.conf['IMG_W'] * self.conf['IMG_H'] * 2)
+        pred = pred.view(-1, self.conf['IMG_W'] * self.conf['IMG_H'] * 2)
         recon_element = torch.sqrt(torch.sum(torch.mul(torch.add(gt, pred.mul(-1)).pow(2), w), 1))
         return torch.sum(recon_element).mul(1. / self.conf['BATCHSIZE'])
 
@@ -109,9 +108,9 @@ class Losses:
         kl = self.kl_loss(mu, logvar)
         recon_loss = self.hist_loss(gt, pred, lossweights)
         # recon_loss_l2 = l2_loss(gt, pred)
-        mah = self.mah_loss(gt, pred)
+        # mah = self.mah_loss(gt, pred)
         grad = self.grad_loss(gt, pred)
-        return kl, recon_loss, grad, mah
+        return kl, recon_loss, grad, 0
 
     def cvae_loss(self, pred, gt, lossweights, mu, logvar):
         """

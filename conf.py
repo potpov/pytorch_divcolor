@@ -1,7 +1,8 @@
 import socket
-
+import pathlib
 # automatically detect if the script is on localhost or on remote server
 # in order to fix some path
+
 deploy = True
 if socket.gethostname() == 'parrot':
     deploy = False
@@ -18,7 +19,7 @@ default_conf = {
     'BATCHSIZE': 64,
     'TEST_BATCHSIZE': 12,
     # weight stuff
-    'RELOAD_WEIGHTS': True,
+    'RELOAD_WEIGHTS': False,
     'WEIGHT_FILENAME': 'delta_2_prior.npy',
     'Q_FACTOR': 26,
     'DELTA_GAUSSIAN': 2,
@@ -37,9 +38,9 @@ default_conf = {
     ########
     # MDN PARAMS
 
-    'TRAIN_MDN': True,  # if train of mdn has to be performed
-    'TRAIN_VAE': True,  # if train of vae has to be performed
-    'TEST_MDN_VAE': True,
+    'TRAIN_MDN': False,  # if train of mdn has to be performed
+    'TRAIN_VAE': False,  # if train of vae has to be performed
+    'TEST_MDN_VAE': False,
 
     'VAE_LR': 5e-5,  # VAE learning rate
     'MDN_LR': 1e-3,  # MDN learning rate
@@ -73,7 +74,9 @@ default_conf = {
     'BIG_EARTH_CVS_NAME': 'big_earth_50000.csv' if deploy else 'big_earth_3000.csv',
     'BIG_EARTH_QNTL_NAME': 'quantiles_50000.json' if deploy else 'quantiles_3000.json',
 
-    'OUT_DIR': 'tests/',  # experiment results dir
+    # experiment results dir
+    'OUT_DIR': '/nas/softechict-nas-1/mcipriano/experiments' if deploy else 'tests/',
+    'TENSORBOARD_DIR': '/nas/softechict-nas-1/mcipriano/' if deploy else pathlib.Path(__file__).parent,
     'SEED': 42,
 
     "TEST_SPLIT": 0.2,  # train / dataset %
@@ -82,8 +85,8 @@ default_conf = {
 
     "BANDS": ["B02", "B03", "B04"],
     # original image size
-    'IMG_W': 64,
-    'IMG_H': 64,
+    'IMG_W': 128,
+    'IMG_H': 128,
     # scaled image size
     'UP_W': 64,
     'UP_H': 64,

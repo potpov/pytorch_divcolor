@@ -38,7 +38,7 @@ def split_bands(spectral_img):
 
 
 class BigEarthDataset(Dataset):
-    def __init__(self, conf, csv_path, quantiles, random_seed, skip_weights=False):
+    def __init__(self, conf, csv_path, quantiles, random_seed, writer=None, skip_weights=False):
         """
         Args:
             csv_path (string): path to csv file containing folder name that contain images
@@ -76,6 +76,8 @@ class BigEarthDataset(Dataset):
         if not skip_weights:
             self.binedges = np.load(os.path.join(self.curr_dir, 'pot_weights/ab_quantize.npy'))
             self.weights = np.load(os.path.join(self.curr_dir, 'pot_weights', self.conf['WEIGHT_FILENAME']))
+            if writer is not None:
+                writer.add_histogram(self.conf['WEIGHT_FILENAME'], self.weights, 0)  # plot weights
 
     def __getitem__(self, index):
         # obtain the right folder
@@ -87,8 +89,8 @@ class BigEarthDataset(Dataset):
                     os.path.join(self.curr_dir, filename),
                     b,
                     self.quantiles,
-                    self.conf['UP_W'],
-                    self.conf['UP_H']
+                    self.conf['IMG_W'],
+                    self.conf['IMG_H']
                 )
                 imgs_bands.append(band)
         if len(self.bands) == 3:
@@ -118,37 +120,36 @@ class BigEarthDataset(Dataset):
         return set of images for the models
         :param rgb: rgb image to be converted
         :return: color_ab: AB color channels, shape 2x64x64
-        :return: grey_little: greyscale image, shape 1x64x64
+        :return: grey: greyscale image, shape 1x64x64
         :return: weights: set of weights for the color space
         :return: grey_big: greyscale image, shape 1x256x256
         :return: grey_cropped: greyscale cropped image, shape 1x224x224
         """
-        color_ab = np.zeros((2, 64, 64), dtype='f')
-        grey_little = np.zeros((1, 64, 64), dtype='f')
-        grey_cropped = np.zeros((1, 224, 224), dtype='f')
 
         # converting original image to CIELAB
         img_lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
         img_lab = ((img_lab * 2.) / 255.) - 1.
 
-        # creating scaled versions of the image
-        img_little = cv2.resize(img_lab, (64, 64))
+        # GREY cropped for MDN
+        grey_cropped = np.zeros((1, 224, 224), dtype='f')
         img_cropped = cv2.resize(img_lab, (224, 224))
-
-        # copying grey scale layers
         grey_cropped[0, :, :] = img_cropped[..., 0]
-        grey_little[0, :, :] = img_little[..., 0]
 
-        # copying color layers
-        color_ab[0, :, :] = img_little[..., 1].reshape(1, 64, 64)
-        color_ab[1, :, :] = img_little[..., 2].reshape(1, 64, 64)
+        # GREY scale image natural shape
+        grey = np.zeros((1, self.conf['IMG_W'], self.conf['IMG_H']), dtype='f')
+        grey[0, :, :] = img_lab[..., 0]
+
+        # AB channels natural shape
+        color_ab = np.zeros((2, self.conf['IMG_W'], self.conf['IMG_H']), dtype='f')
+        color_ab[0, :, :] = img_lab[..., 1].reshape(1, self.conf['IMG_W'], self.conf['IMG_H'])
+        color_ab[1, :, :] = img_lab[..., 2].reshape(1, self.conf['IMG_W'], self.conf['IMG_H'])
 
         # load weights or return array of ones
-        weights = np.ones((2, 64, 64), dtype='f')
+        weights = np.ones((2, self.conf['IMG_W'], self.conf['IMG_H']), dtype='f')
         if not self.skip_weights:
             weights = self.__getweights__(color_ab)
 
-        return color_ab, grey_little, weights, grey_cropped
+        return color_ab, grey, weights, grey_cropped
 
     def __getweights__(self, img):
         """
@@ -156,16 +157,16 @@ class BigEarthDataset(Dataset):
         :param img: AB channel image
         :return: AB image shape with a weight on each pixel
         """
-        # flat the img vector and select A channel
+        # flat the img vector and select A channel + strech it to [-128, 128]
         img_vec = img.reshape(-1)
         img_vec = img_vec * 128.
-        img_vec_a = img_vec[:np.prod((64, 64))]
+        img_vec_a = img_vec[:np.prod((self.conf['IMG_W'], self.conf['IMG_H']))]
 
         # compute min distance between each pixel and the A edges, scale values on Quantization factor
         binid_a = [np.abs(self.binedges - v).argmin() for v in img_vec_a]
 
         # flat the img vector and select B channel
-        img_vec_b = img_vec[np.prod((64, 64)):]
+        img_vec_b = img_vec[np.prod((self.conf['IMG_W'], self.conf['IMG_H'])):]
 
         # compute min distance between each pixel and the B edges
         binid_b = [np.abs(self.binedges - v).argmin() for v in img_vec_b]
@@ -175,6 +176,6 @@ class BigEarthDataset(Dataset):
 
         # saving result for this image
         result = np.zeros(img.shape, dtype='f')
-        result[0, :, :] = binweights.reshape((64, 64))
-        result[1, :, :] = binweights.reshape((64, 64))
+        result[0, :, :] = binweights.reshape((self.conf['IMG_W'], self.conf['IMG_H']))
+        result[1, :, :] = binweights.reshape((self.conf['IMG_W'], self.conf['IMG_H']))
         return result
