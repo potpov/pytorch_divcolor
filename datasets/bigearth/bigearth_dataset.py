@@ -99,7 +99,7 @@ class BigEarthDataset(Dataset):
         else:
             spectral_img = np.concatenate(imgs_bands, axis=2)
             spectral_bands, rgb = split_bands(spectral_img)
-            return self.generate_inputs(rgb)
+            return spectral_bands, self.generate_inputs(rgb)
 
     def __len__(self):
         return self.data_len

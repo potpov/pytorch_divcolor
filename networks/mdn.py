@@ -7,7 +7,7 @@ class MDN(nn.Module):
     def __init__(self, conf):
         super(MDN, self).__init__()
 
-        self.hidden_size = conf['HIDDENSIZE']
+        self.hidden_size = 64
         self.nmix = conf['NMIX']
         self.nout = (self.hidden_size+1)*self.nmix
 

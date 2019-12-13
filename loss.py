@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 import os
 import numpy as np
+from torch.autograd import grad
 
 
 class Losses:
@@ -69,8 +70,9 @@ class Losses:
         :param logvar: predicted log(variance)
         :return: kl_distance
         """
-        kl_element = torch.add(torch.add(torch.add(mu.pow(2), logvar.exp()), -1), logvar.mul(-1))
-        return torch.sum(kl_element).mul(.5)
+        # kl_element = torch.add(torch.add(torch.add(mu.pow(2), logvar.exp()), -1), logvar.mul(-1))
+        kl_element = (-2 * logvar) + torch.exp(2 * logvar) + mu.pow(2) - 1
+        return torch.mean(torch.sum(kl_element * 0.5, axis=1))
 
     def hist_loss(self, gt, pred, w):
         """
@@ -83,7 +85,7 @@ class Losses:
         gt = gt.view(-1, self.conf['IMG_W'] * self.conf['IMG_H'] * 2)
         pred = pred.view(-1, self.conf['IMG_W'] * self.conf['IMG_H'] * 2)
         recon_element = torch.sqrt(torch.sum(torch.mul(torch.add(gt, pred.mul(-1)).pow(2), w), 1))
-        return torch.sum(recon_element).mul(1. / self.conf['BATCHSIZE'])
+        return recon_element.mean()  # mean on the batch
 
     def l2_loss(self, gt, pred):
         """
@@ -112,6 +114,21 @@ class Losses:
         grad = self.grad_loss(gt, pred)
         return kl, recon_loss, grad, 0
 
+    def gradient_penalty(self, gt, mu, logvar):
+
+        # generating a z from the net prediction
+        stddev = torch.sqrt(torch.exp(logvar))
+        eps = torch.randn(stddev.size()).normal_().cuda()
+        z_pred = torch.add(mu, torch.mul(eps, stddev)).requires_grad_()
+        z_pred = z_pred.reshape(-1, self.conf['HIDDEN_SIZE'], 1, 1).repeat(1, 1, 4, 4)
+
+        # computing gradient penalty
+        gradients = grad(outputs=z_pred, inputs=gt,
+                         grad_outputs=torch.ones_like(z_pred).cuda(),
+                         retain_graph=True, create_graph=True, only_inputs=True)[0]
+        gradient_penalty = ((gradients.norm(2, dim=(1, 2, 3)) - 1) ** 2).mean()
+        return gradient_penalty
+
     def cvae_loss(self, pred, gt, lossweights, mu, logvar):
         """
         this encoder loss is not forced to be normal gaussian
@@ -120,10 +137,11 @@ class Losses:
         :param lossweights: weights for colors
         :return:
         """
+        grad_penalty = self.gradient_penalty(gt, mu, logvar)
         kl_loss = self.kl_loss(mu, logvar)
         recon_loss = self.hist_loss(gt, pred, lossweights)
         # recon_loss_l2 = self.l2_loss(gt, pred)
-        return recon_loss, kl_loss
+        return recon_loss, kl_loss, grad_penalty
 
     def get_gmm_coeffs(self, gmm_params):
         """

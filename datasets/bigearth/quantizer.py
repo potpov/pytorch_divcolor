@@ -38,7 +38,7 @@ def quantization(conf, q_factor=100, skip_hist=False):
         print("going to calculate weights. this could take a while.. QFACTOR:" + str(q_factor))
         tot_hist = np.zeros((q_factor, q_factor), dtype='f')
 
-        for batch_idx, (color_ab, _, _, _) in \
+        for batch_idx, (_, (color_ab, _, _, _)) in \
                 tqdm(enumerate(data_loader), total=len(data_loader)):
 
             # unroll image and stretch it to [-128, 128]

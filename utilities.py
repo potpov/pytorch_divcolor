@@ -10,51 +10,59 @@ import json
 import torch
 import cv2
 import numpy as np
+import shutil
+import glob
 
 
 class Utilities:
 
-    def __init__(self, load_dir=None, dataset_name=default_conf['DATASET_NAME']):
+    def __init__(self, load_dir, dataset_name=default_conf['DATASET_NAME']):
         """
         loading config file from json file or
         creating a new experiment from the current default configuration
         default configuration is stored in conf.py
         :param load_dir: name of the folder in the experiment dir
+        :param dataset_name: {bigearth|lfw}
         :return: new experiment dir or loaded experiment dir
         """
-        datalog = str(datetime.datetime.now()).replace(' ', '_')
-        if not load_dir:  # NEW EXPERIMENT
-            # generating unique name for the experiment folder
-            save_dir = os.path.join(default_conf['OUT_DIR'], dataset_name, datalog)
 
+        save_dir = os.path.join(default_conf['OUT_DIR'], dataset_name, load_dir)
+
+        if not os.path.exists(save_dir):  # NEW EXPERIMENT
+            print("creating new experiment with name: ", load_dir)
             # creating folders for model, config and results
             os.mkdir(save_dir)
+
             if default_conf['TEST_MDN_VAE']:
                 os.mkdir(os.path.join(save_dir, 'results_mdn'))
             if default_conf['TEST_CVAE']:
                 os.mkdir(os.path.join(save_dir, 'results_cvae'))
 
-            # dump configuration file
+            # dump DEFAULT configuration file
             with open(os.path.join(save_dir, 'config.json'), "w") as write_file:
                 json.dump(default_conf, write_file, indent=4)
             self.conf = default_conf
 
-        else:  # LOADING PREVIOUS EXPERIMENT
-            save_dir = os.path.join(default_conf['OUT_DIR'], dataset_name, load_dir)
-
+        else:
+            print("loading previous experiment: ", load_dir)
             # loading config file from json
             with open(os.path.join(save_dir, 'config.json'), 'r') as handle:
                 config = json.load(handle)
 
-            # create results folder if does not exists
+            # cleaning previous results folders
+            for prev_exp in glob.glob(os.path.join(save_dir, 'results*')):
+                shutil.rmtree(prev_exp)
+
+            # create new results folders
             if config['TEST_MDN_VAE'] and not os.path.isdir(os.path.join(save_dir, 'results_mdn')):
                 os.mkdir(os.path.join(save_dir, 'results_mdn'))
             if config['TEST_CVAE'] and not os.path.isdir(os.path.join(save_dir, 'results_cvae')):
                 os.mkdir(os.path.join(save_dir, 'results_cvae'))
+
             self.conf = config
 
         # saving class attributes
-        self.datalog = datalog
+        self.title = load_dir
         self.save_dir = save_dir
         self.dataset_name = dataset_name
 
@@ -82,7 +90,6 @@ class Utilities:
         self.conf['LOAD_CVAE'] = False
         self.conf['LOAD_MDN'] = False
         self.conf['LOAD_VAE'] = False
-        self.conf['EXPERIMENT_DATE'] = self.datalog
         with open(os.path.join(self.save_dir, 'config.json'), "w") as write_file:
             json.dump(self.conf, write_file, indent=4)
 
@@ -227,7 +234,10 @@ class Utilities:
         header = self.generate_header(border_img.shape[1], with_posterior=(posterior is not None))
         result_image = np.concatenate((header, result_image), axis=0)
 
+        # create output dir if not exists and save result on disk
         out_fn_pred = os.path.join(self.save_dir, model_name, str(file_name) + '.jpg')
+        if not os.path.exists(os.path.join(self.save_dir, model_name)):
+            os.mkdir(os.path.join(self.save_dir, model_name))
         cv2.imwrite(out_fn_pred, result_image)
 
         # saving path for tensorboard will be something like mdn/result on iteration == batch idx

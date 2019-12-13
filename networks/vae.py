@@ -8,7 +8,7 @@ class VAE(nn.Module):
     def __init__(self, conf):
         super(VAE, self).__init__()
 
-        self.hidden_size = conf['HIDDENSIZE']
+        self.hidden_size = 64
 
         # Encoder layers
         self.enc_conv0 = nn.Conv2d(2, 64, 5, stride=2, padding=2)
@@ -25,7 +25,7 @@ class VAE(nn.Module):
 
         # Decoder layers
         self.dec_upsamp0 = nn.Upsample(scale_factor=4, mode='bilinear', align_corners=True)
-        self.dec_conv0 = nn.Conv2d(conf['HIDDENSIZE'], 1024, 3, stride=1, padding=1)
+        self.dec_conv0 = nn.Conv2d(self.hidden_size, 1024, 3, stride=1, padding=1)
         self.dec_bn0 = nn.BatchNorm2d(1024)  # 4x4x1024
         self.dec_upsamp1 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         self.dec_conv1 = nn.Conv2d(1024, 512, 3, stride=1, padding=1)
