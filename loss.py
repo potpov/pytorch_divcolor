@@ -97,34 +97,17 @@ class Losses:
         recon_element_l2 = torch.sqrt(torch.sum(torch.add(gt, pred.mul(-1)).pow(2), 1))
         return torch.sum(recon_element_l2).mul(1. / self.conf['BATCHSIZE'])
 
-    def vae_loss(self, mu, logvar, pred, gt, lossweights):
-        """
-        loss for the variational autoencoder
-        :param mu: predicted mean
-        :param logvar: predicted logarithm of the variance
-        :param pred: predicted color image
-        :param gt: real color image
-        :param lossweights: weight of the colors
-        :return: sum of losses
-        """
-        kl = self.kl_loss(mu, logvar)
-        recon_loss = self.hist_loss(gt, pred, lossweights)
-        # recon_loss_l2 = l2_loss(gt, pred)
-        # mah = self.mah_loss(gt, pred)
-        grad = self.grad_loss(gt, pred)
-        return kl, recon_loss, grad, 0
-
-    def gradient_penalty(self, gt, mu, logvar):
+    def gradient_penalty(self, input, output):
 
         # generating a z from the net prediction
-        stddev = torch.sqrt(torch.exp(logvar))
-        eps = torch.randn(stddev.size()).normal_().cuda()
-        z_pred = torch.add(mu, torch.mul(eps, stddev)).requires_grad_()
-        z_pred = z_pred.reshape(-1, self.conf['HIDDEN_SIZE'], 1, 1).repeat(1, 1, 4, 4)
+        # stddev = torch.sqrt(torch.exp(logvar))
+        # eps = torch.randn(stddev.size()).normal_().cuda()
+        # z_pred = torch.add(mu, torch.mul(eps, stddev)).requires_grad_()
+        # z_pred = z_pred.reshape(-1, self.conf['HIDDEN_SIZE'], 1, 1).repeat(1, 1, 4, 4)
 
         # computing gradient penalty
-        gradients = grad(outputs=z_pred, inputs=gt,
-                         grad_outputs=torch.ones_like(z_pred).cuda(),
+        gradients = grad(outputs=output, inputs=input,
+                         grad_outputs=torch.ones_like(output).cuda(),
                          retain_graph=True, create_graph=True, only_inputs=True)[0]
         gradient_penalty = ((gradients.norm(2, dim=(1, 2, 3)) - 1) ** 2).mean()
         return gradient_penalty
@@ -137,36 +120,11 @@ class Losses:
         :param lossweights: weights for colors
         :return:
         """
-        grad_penalty = self.gradient_penalty(gt, mu, logvar)
+        gp_1 = self.gradient_penalty(gt, mu)
+        gp_2 = self.gradient_penalty(gt, logvar)
+        grad_penalty = (gp_1 + gp_2) / 2
+
         kl_loss = self.kl_loss(mu, logvar)
         recon_loss = self.hist_loss(gt, pred, lossweights)
         # recon_loss_l2 = self.l2_loss(gt, pred)
         return recon_loss, kl_loss, grad_penalty
-
-    def get_gmm_coeffs(self, gmm_params):
-        """
-        return a set of means and weights for a mixture of gaussians
-        :param gmm_params: predicted embedding
-        :return: set of means and weights
-        """
-        gmm_mu = gmm_params[..., :self.conf['HIDDENSIZE'] * self.conf['NMIX']]
-        gmm_mu.contiguous()
-        gmm_pi_activ = gmm_params[..., self.conf['HIDDENSIZE'] * self.conf['NMIX']:]
-        gmm_pi_activ.contiguous()
-        gmm_pi = F.softmax(gmm_pi_activ, dim=1)
-        return gmm_mu, gmm_pi
-
-    def mdn_loss(self, gmm_params, mu, stddev, batchsize):
-        gmm_mu, gmm_pi = self.get_gmm_coeffs(gmm_params)
-        eps = torch.randn(stddev.size()).normal_().cuda()
-        z = torch.add(mu, torch.mul(eps, stddev))
-        z_flat = z.repeat(1, self.conf['NMIX'])
-        z_flat = z_flat.view(batchsize * self.conf['NMIX'], self.conf['HIDDENSIZE'])
-        gmm_mu_flat = gmm_mu.reshape(batchsize * self.conf['NMIX'], self.conf['HIDDENSIZE'])
-        dist_all = torch.sqrt(torch.sum(torch.add(z_flat, gmm_mu_flat.mul(-1)).pow(2).mul(50), 1))
-        dist_all = dist_all.view(batchsize, self.conf['NMIX'])
-        dist_min, selectids = torch.min(dist_all, 1)
-        gmm_pi_min = torch.gather(gmm_pi, 1, selectids.view(-1, 1))
-        gmm_loss = torch.mean(torch.add(-1*torch.log(gmm_pi_min+1e-30), dist_min))
-        gmm_loss_l2 = torch.mean(dist_min)
-        return gmm_loss, gmm_loss_l2

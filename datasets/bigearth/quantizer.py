@@ -13,8 +13,15 @@ def quantization(conf, q_factor=100, skip_hist=False):
     #################################
     # loading dataset without weights
 
-    big_earth = BigEarthDataset(conf, conf['BIG_EARTH_CVS_NAME'], conf['BIG_EARTH_QNTL_NAME'], 42, skip_weights=True)
-    idx, _ = big_earth.split_dataset(0)
+    big_earth = BigEarthDataset(
+        conf['BIG_EARTH_CVS_NAME'],
+        42,
+        conf['BANDS'],
+        mode='colorization',
+        RGB=False,
+        skip_weights=True
+    )
+    idx, _, _ = big_earth.split_dataset(0.1, 0.15)
     sampler = SubsetRandomSampler(idx)
 
     data_loader = torch.utils.data.DataLoader(
@@ -38,7 +45,7 @@ def quantization(conf, q_factor=100, skip_hist=False):
         print("going to calculate weights. this could take a while.. QFACTOR:" + str(q_factor))
         tot_hist = np.zeros((q_factor, q_factor), dtype='f')
 
-        for batch_idx, (_, (color_ab, _, _, _)) in \
+        for batch_idx, (_, (color_ab, _, _)) in \
                 tqdm(enumerate(data_loader), total=len(data_loader)):
 
             # unroll image and stretch it to [-128, 128]

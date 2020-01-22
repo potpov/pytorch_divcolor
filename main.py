@@ -1,12 +1,10 @@
 from __future__ import print_function
-from mdn import Mdn
 from cvae import Cvae
 from utilities import Utilities
 import time
 import argparse
 from tensorboardX import SummaryWriter
 import os
-import shutil
 
 
 os.environ['OMP_NUM_THREADS'] = "1"
@@ -17,12 +15,12 @@ parser.add_argument(
     '-e', '--experiments',
     help='name of new/previous tests. space separated: "test1 test2 test3"',
     required=True,
-    type=str
 )
+parser.add_argument('--overwrite', help='overwrite existing folders', action='store_true')
 args = parser.parse_args()
 
 
-def train(utilities):
+def colorization(utilities):
 
     ########
     # tensor-board log
@@ -35,26 +33,11 @@ def train(utilities):
     if utilities.conf['RELOAD_WEIGHTS']:
         utilities.reload_weights()
 
-    train_loader = utilities.load_data('train', writer)
-    test_loader = utilities.load_data('test')
+    train_loader = utilities.load_data('train', mode='colorization', rgb=False, writer=writer)
+    test_loader = utilities.load_data('test', mode='colorization', rgb=False,)
 
     ###########
-    # MDN PART
-
-    mdn = Mdn(utilities)
-    if utilities.conf['LOAD_VAE']:
-        mdn.load_vae_weights()
-    if utilities.conf['TRAIN_VAE']:
-        mdn.train_vae(train_loader, writer)
-    if utilities.conf['LOAD_MDN']:
-        mdn.load_mdn_weights()
-    if utilities.conf['TRAIN_MDN']:
-        mdn.train_mdn(train_loader, writer)
-    if utilities.conf['TEST_MDN_VAE']:
-        mdn.test(test_loader, writer)
-
-    ###########
-    # CVAE PART
+    # CVAE
 
     cvae = Cvae(utilities)
     if utilities.conf['LOAD_CVAE']:
@@ -64,6 +47,13 @@ def train(utilities):
     if utilities.conf['TEST_CVAE']:
         print("starting final testing")
         cvae.test(test_loader, writer)
+
+    # FEATURE EXTRACTION
+    pred_train_loader = utilities.load_data('prediction', mode='classification', rgb=False)
+    pred_test_loader = utilities.load_data('prediction', mode='classification', rgb=False)
+
+    cvae.transfer_learning_train(pred_train_loader, writer)
+    cvae.transfer_learning_test(pred_test_loader, writer)
 
     utilities.test_complete()
 
@@ -76,8 +66,8 @@ if __name__ == '__main__':
     experiments = [str(exp) for exp in args.experiments.split(' ')]
     for experiment in experiments:
         # create or load experiment settings
-        utils = Utilities(experiment)
-        train(utils)
+        utils = Utilities(experiment, overwrite=args.overwrite)
+        colorization(utils)
         print("training completed in {} hours".format(round((time.time() - start_time) / 3600), 2))
 
 

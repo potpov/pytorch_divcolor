@@ -21,3 +21,5 @@ tests/
 datasets/bigearth/big_earth_50000\.csv
 
 datasets/bigearth/quantiles_50000\.json
+
+buono_sposta_in_test/

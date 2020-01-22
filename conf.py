@@ -13,18 +13,19 @@ default_conf = {
     # MAIN GENERIC PARAMS
 
     'DATASET_NAME': 'bigearth',  # dataset type for the experiment: bigearth, lfw, ...
-    'EPOCHS': 50,  # number of epoch to be performed foreach model
+    'EPOCHS': 3,  # number of epoch to be performed foreach model
+    'TRANSF_LEARNING_EPOCH': 3,
     # reload hist weights for the dataset with a quantization coefficient Q_FACTOR
     "TEST_ON_TRAIN_RATE": 5,  # do test every X train epochs
     'BATCHSIZE': 32,
-    'TEST_BATCHSIZE': 12,
+    'TEST_BATCHSIZE': 16,
     # weight stuff
     'RELOAD_WEIGHTS': False,
-    'WEIGHT_FILENAME': 'delta_2_prior.npy',
+    'WEIGHT_FILENAME': 'delta_2_test.npy',
     'Q_FACTOR': 26,
     'DELTA_GAUSSIAN': 2,
-    'LAMDA': 0.8,
-    'NMIX': 4,  # number of samples AKA different colorizations for a given image
+    'LAMDA': 0.7,
+    'NMIX': 3,  # number of samples AKA different colorizations for a given image
     'HIDDEN_SIZE': 128,
 
     #########
@@ -34,33 +35,10 @@ default_conf = {
     'TEST_CVAE': True,
     'CVAE_EPOCH_CHECKPOINT': 0,
     'LOAD_CVAE': False,
-    'CVAE_LR': 1e-5,
-    'WARM_UP_TH': 1e-5,
+    'CVAE_LR': 1e-05,
+    'PREDICTION_LR': 5e-04,
+    'WARM_UP_TH': 1e-3,
     'CLIP_TH': 20,
-    ########
-    # MDN PARAMS
-
-    'TRAIN_MDN': False,  # if train of mdn has to be performed
-    'TRAIN_VAE': False,  # if train of vae has to be performed
-    'TEST_MDN_VAE': False,
-
-    'VAE_LR': 5e-5,  # VAE learning rate
-    'MDN_LR': 1e-3,  # MDN learning rate
-
-    'VAE_EPOCH_CHECKPOINT': 0,
-    'MDN_EPOCH_CHECKPOINT': 0,
-    'LOAD_MDN': False,
-    'LOAD_VAE': False,
-
-    # weights for MDN-VAE losses
-    'KL_W': 1e-2,  # kl divergence
-    'MAH_W': 0,  # mah loss -> PCA over the most important components 1e-2
-    'HIST_W': 1,  # hist loss -> see colorful colorizations
-    'GRA_W': 1e1,  # gradient loss using sobel
-
-    # PCA info for the MAH loss
-    'PCA_DIR': 'assets/pcomp/lfw',
-    'PCA_COMP_NUMBER': 20,
 
     # SCHEDULER PARAMS
     'SCHED_VAE_STEP': 5,
@@ -73,8 +51,11 @@ default_conf = {
     # OTHER GENERIC PARAMS
 
     # names of dataset files
-    'BIG_EARTH_CVS_NAME': 'big_earth_50000.csv' if deploy else 'big_earth_3000.csv',
-    'BIG_EARTH_QNTL_NAME': 'quantiles_50000.json' if deploy else 'quantiles_3000.json',
+    'BIG_EARTH_CVS_NAME':
+        '/home/potpov/Projects/PycharmProjects/trainship/pytorch_divcolor/datasets/bigearth/csv/big_earth_50000.csv'
+    if deploy else
+        '/nas/softechict-nas-2/svincenzi/big_earth_all_torch_labels.csv',
+
 
     # experiment results dir
     'OUT_DIR': '/nas/softechict-nas-2/mcipriano/experiments' if deploy else 'tests/',
@@ -84,12 +65,31 @@ default_conf = {
     "TEST_SPLIT": 0.2,  # train / dataset %
     'NTHREADS': 8,  # data-loader workers
 
-    # "BANDS": ["B02", "B03", "B04"],
-    "BANDS": ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"],
+    # "BANDS": ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"],
+    "BANDS": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     # original image size
     'IMG_W': 128,
     'IMG_H': 128,
     # scaled image size
     'UP_W': 64,
     'UP_H': 64,
+
+    "CLASSES": [
+        'Continuous urban fabric', 'Discontinuous urban fabric',
+        'Industrial or commercial units', 'Road and rail networks and associated land',
+        'Port areas', 'Airports', 'Mineral extraction sites', 'Dump sites',
+        'Construction sites', 'Green urban areas',
+        'Sport and leisure facilities', 'Non-irrigated arable land',
+        'Permanently irrigated land', 'Rice fields', 'Vineyards',
+        'Fruit trees and berry plantations', 'Olive groves',
+        'Pastures', 'Annual crops associated with permanent crops',
+        'Complex cultivation patterns',
+        'Land principally occupied by agriculture, with significant areas of natural vegetation',
+        'Agro-forestry areas', 'Broad-leaved forest', 'Coniferous forest', 'Mixed forest',
+        'Natural grassland', 'Moors and heathland', 'Sclerophyllous vegetation',
+        'Transitional woodland/shrub', 'Beaches, dunes, sands', 'Bare rock',
+        'Sparsely vegetated areas', 'Burnt areas', 'Glaciers and perpetual snow',
+        'Inland marshes', 'Peatbogs', 'Salt marshes', 'Salines', 'Intertidal flats',
+        'Water courses', 'Water bodies', 'Coastal lagoons', 'Estuaries', 'Sea and ocean',
+    ]
 }

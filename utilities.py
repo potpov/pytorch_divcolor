@@ -1,22 +1,21 @@
 from conf import default_conf
 from torch.utils.data import DataLoader
 from datasets.bigearth.bigearth_dataset import BigEarthDataset
-from datasets.lfw.lfw_dataset import Colordata
 from datasets.bigearth.quantizer import quantization
 from torch.utils.data import SubsetRandomSampler
 import os
-import datetime
 import json
 import torch
 import cv2
 import numpy as np
 import shutil
 import glob
+import shutil
 
 
 class Utilities:
 
-    def __init__(self, load_dir, dataset_name=default_conf['DATASET_NAME']):
+    def __init__(self, load_dir, dataset_name=default_conf['DATASET_NAME'], overwrite=False):
         """
         loading config file from json file or
         creating a new experiment from the current default configuration
@@ -28,13 +27,17 @@ class Utilities:
 
         save_dir = os.path.join(default_conf['OUT_DIR'], dataset_name, load_dir)
 
+        # if overwrite flag is on, whatever there's on the savedir path
+        # gonna be overwritten
+        if os.path.exists(save_dir) and overwrite:
+            print("overwriting ", save_dir)
+            shutil.rmtree(save_dir)
+
         if not os.path.exists(save_dir):  # NEW EXPERIMENT
             print("creating new experiment with name: ", load_dir)
             # creating folders for model, config and results
             os.mkdir(save_dir)
 
-            if default_conf['TEST_MDN_VAE']:
-                os.mkdir(os.path.join(save_dir, 'results_mdn'))
             if default_conf['TEST_CVAE']:
                 os.mkdir(os.path.join(save_dir, 'results_cvae'))
 
@@ -68,7 +71,7 @@ class Utilities:
 
     def epoch_checkpoint(self, model, epoch):
         """
-        update the json file with the currect achieved epoch number and print it to the config file
+        update the json file with the current achieved epoch number and print it to the config file
         epoch: epoch number
         """
         if model == 'MDN':
@@ -93,7 +96,7 @@ class Utilities:
         with open(os.path.join(self.save_dir, 'config.json'), "w") as write_file:
             json.dump(self.conf, write_file, indent=4)
 
-    def load_data(self, split, writer=None):
+    def load_data(self, split, mode, rgb, writer=None):
         """
         generate dataloader according to the dataset
         :param split: {train|test}
@@ -103,13 +106,14 @@ class Utilities:
         if self.dataset_name == 'bigearth':
 
             big_earth = BigEarthDataset(
-                self.conf,
                 self.conf['BIG_EARTH_CVS_NAME'],
-                self.conf['BIG_EARTH_QNTL_NAME'],
                 42,
-                writer
+                self.conf['BANDS'],
+                mode=mode,
+                RGB=rgb,
+                weights_file=self.conf['WEIGHT_FILENAME']
             )
-            train_idx, test_idx = big_earth.split_dataset(0.2)
+            train_idx, val_idx, test_idx = big_earth.split_dataset(0.2, 0.3)
 
             if split == 'train':
                 sampler = SubsetRandomSampler(train_idx)
@@ -126,23 +130,6 @@ class Utilities:
                 drop_last=True,
             )
             return data_loader
-
-        # LFW DATA LOADER
-        elif self.dataset_name == 'lfw':
-            data = Colordata(
-                self.conf,
-                split=split
-            )
-
-            data_loader = DataLoader(
-                dataset=data,
-                num_workers=self.conf['NTHREADS'],
-                batch_size=self.conf['BATCHSIZE'],
-                shuffle=True,
-                drop_last=True
-            )
-            return data_loader
-        # ERROR
         else:
             raise Exception('dataset not valid')
 
