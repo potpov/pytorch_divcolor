@@ -52,9 +52,9 @@ default_conf = {
 
     # names of dataset files
     'BIG_EARTH_CVS_NAME':
-        '/home/potpov/Projects/PycharmProjects/trainship/pytorch_divcolor/datasets/bigearth/csv/big_earth_50000.csv'
+        '/nas/softechict-nas-2/svincenzi/BigEarth_torch_version/big_earth_all_torch_labels.csv'
     if deploy else
-        '/nas/softechict-nas-2/svincenzi/big_earth_all_torch_labels.csv',
+        '/home/potpov/Projects/PycharmProjects/trainship/pytorch_divcolor/datasets/bigearth/csv/big_earth_50000.csv',
 
 
     # experiment results dir

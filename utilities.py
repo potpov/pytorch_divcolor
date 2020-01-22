@@ -57,8 +57,6 @@ class Utilities:
                 shutil.rmtree(prev_exp)
 
             # create new results folders
-            if config['TEST_MDN_VAE'] and not os.path.isdir(os.path.join(save_dir, 'results_mdn')):
-                os.mkdir(os.path.join(save_dir, 'results_mdn'))
             if config['TEST_CVAE'] and not os.path.isdir(os.path.join(save_dir, 'results_cvae')):
                 os.mkdir(os.path.join(save_dir, 'results_cvae'))
 

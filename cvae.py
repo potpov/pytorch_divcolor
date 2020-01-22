@@ -154,7 +154,7 @@ class Cvae:
 
     def transfer_learning_train(self, data_loader, writer, feature_extr=True):
 
-        print("starting transfer learning for prediction")
+        print("transfer learning prediction (training)")
         optimizer = optim.SGD(self.cvae.parameters(), lr=self.conf['PREDICTION_LR'])
         loss_fn = nn.MultiLabelSoftMarginLoss()
 
@@ -180,41 +180,43 @@ class Cvae:
 
                 pred, pred_sigmoid = self.cvae(color=None, inputs=spectrals_norm, prediction=True)
 
-                loss = loss_fn(pred.cpu(), labels)
+                loss = loss_fn(pred.cpu(), labels.float())
                 loss.backward()
-                writer.add_scalar('transfer_learning/loss', loss, epochs*len(data_loader) + idx)
+                writer.add_scalar('TL/loss', loss, epochs*len(data_loader) + idx)
 
                 optimizer.step()
 
+        print("transfer learning completed. saving weights")
+        torch.save(self.cvae.state_dict(), '%s/finetuning.pth' % self.save_dir)
+
     def transfer_learning_test(self, data_loader, writer, feature_extr=True):
 
-        print("TEST for prediction")
+        print("TEST - prediction")
 
         self.cvae.train(False)
         self.cvae.eval()
         avg_pr_micro = 0
 
         with torch.no_grad():
-            for epochs in range(0, self.conf['TRANSF_LEARNING_EPOCH']):
-                for idx, (spectrals, labels, _) in \
-                        tqdm(enumerate(data_loader), total=len(data_loader)):
+            for idx, (spectrals, labels, _) in \
+                    tqdm(enumerate(data_loader), total=len(data_loader)):
 
-                    # removing RGB bands
-                    nocolorbands = torch.arange(3, len(self.conf['BANDS']))
-                    spectrals = torch.index_select(input=spectrals, dim=1, index=nocolorbands)
+                # removing RGB bands
+                nocolorbands = torch.arange(3, len(self.conf['BANDS']))
+                spectrals = torch.index_select(input=spectrals, dim=1, index=nocolorbands)
 
-                    # moving bounds to [0-255] rather than [-1, 1]
-                    spectrals_norm = np.zeros_like(spectrals.numpy())
-                    spectrals_norm = cv2.normalize(spectrals.float().numpy(), spectrals_norm, 0, 255, cv2.NORM_MINMAX)
-                    spectrals_norm = torch.Tensor(spectrals_norm).cuda()
+                # moving bounds to [0-255] rather than [-1, 1]
+                spectrals_norm = np.zeros_like(spectrals.numpy())
+                spectrals_norm = cv2.normalize(spectrals.float().numpy(), spectrals_norm, 0, 255, cv2.NORM_MINMAX)
+                spectrals_norm = torch.Tensor(spectrals_norm).cuda()
 
-                    pred, pred_sigmoid = self.cvae(color=None, inputs=spectrals_norm, prediction=True)
+                pred, pred_sigmoid = self.cvae(color=None, inputs=spectrals_norm, prediction=True)
 
-                    avg_pr_micro = average_precision_score(
-                        labels,
-                        pred_sigmoid.cpu().detach(),
-                        average='micro'
-                    )
-                    writer.add_scalar('transfer_learning/ap_score', avg_pr_micro, epochs*len(data_loader) + idx)
+                avg_pr_micro = average_precision_score(
+                    labels,
+                    pred_sigmoid.cpu().detach(),
+                    average='micro'
+                )
+                writer.add_scalar('TL/ap_score', avg_pr_micro, idx)
 
         print("final avarage precision score: ", avg_pr_micro)
