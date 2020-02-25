@@ -36,6 +36,7 @@ class ResidualBlock(nn.Module):
         out += self.shortcut(x)
         return out
 
+
 class CVAE(nn.Module):
 
     # define layers
@@ -44,9 +45,7 @@ class CVAE(nn.Module):
         self.hidden_size = conf['HIDDEN_SIZE']
         self.train_batch_size = conf['TEST_BATCHSIZE']
 
-        self.encoder_disabled = nn.Sequential(
-
-            nn.Conv2d(2, 2, kernel_size=7, stride=1, padding=3),
+        self.encoder = nn.Sequential(
 
             ResidualBlock(2, 64,  stride=2),
             nn.ReLU(),
@@ -98,7 +97,7 @@ class CVAE(nn.Module):
             nn.Upsample(scale_factor=4, mode='bilinear', align_corners=True),
 
             nn.Conv2d(8, 2, kernel_size=3, stride=1, padding=1),
-            nn.Tanh()
+            # nn.Tanh()
         )
 
     def forward(self, color, inputs):
@@ -125,7 +124,7 @@ class CVAE(nn.Module):
             # mu = x[..., :self.hidden_size]
             # logvar = x[..., self.hidden_size:]
 
-            h = self.encoder_disabled(color)
+            h = self.encoder(color)
             mu = self.mean(h)
             logvar = self.logvar(h)
 

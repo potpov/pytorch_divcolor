@@ -3,12 +3,16 @@ import torch.nn.functional as F
 import os
 import numpy as np
 from torch.autograd import grad
+from torch.nn import MSELoss
+from torch.nn import L1Loss
 
 
 class Losses:
 
     def __init__(self, conf):
         self.conf = conf
+        self.MSE = MSELoss()
+        self.l1_loss = L1Loss()
 
     def mah_loss(self, gt, pred):
         """
@@ -71,8 +75,11 @@ class Losses:
         :return: kl_distance
         """
         # kl_element = torch.add(torch.add(torch.add(mu.pow(2), logvar.exp()), -1), logvar.mul(-1))
-        kl_element = (-2 * logvar) + torch.exp(2 * logvar) + mu.pow(2) - 1
-        return torch.mean(torch.sum(kl_element * 0.5, axis=1))
+        kl_element = 1+logvar-mu.pow(2)-logvar.exp()
+        kl_loss = torch.mean(torch.sum(kl_element * -0.5, axis=1))
+        # ste kl
+        # kl = -0.5*torch.sum(1+logvar-mu.pow(2)-logvar.exp())
+        return kl_loss
 
     def hist_loss(self, gt, pred, w):
         """
@@ -120,11 +127,14 @@ class Losses:
         :param lossweights: weights for colors
         :return:
         """
-        gp_1 = self.gradient_penalty(gt, mu)
-        gp_2 = self.gradient_penalty(gt, logvar)
-        grad_penalty = (gp_1 + gp_2) / 2
+
+        # gp_1 = self.gradient_penalty(gt, mu)
+        # gp_2 = self.gradient_penalty(gt, logvar)
+        # grad_penalty = (gp_1 + gp_2) / 2
 
         kl_loss = self.kl_loss(mu, logvar)
-        recon_loss = self.hist_loss(gt, pred, lossweights)
+        # recon_loss = self.hist_loss(gt, pred, lossweights)
+        l1 = self.l1_loss(pred, gt) * 100.
+        # mse_loss = self.MSE(pred, gt)
         # recon_loss_l2 = self.l2_loss(gt, pred)
-        return recon_loss, kl_loss, grad_penalty
+        return l1, kl_loss

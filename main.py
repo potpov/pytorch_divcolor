@@ -33,27 +33,19 @@ def colorization(utilities):
     if utilities.conf['RELOAD_WEIGHTS']:
         utilities.reload_weights()
 
-    train_loader = utilities.load_data('train', mode='colorization', rgb=False, writer=writer)
-    test_loader = utilities.load_data('test', mode='colorization', rgb=False,)
+    train_loader, test_loader, val_loader = utilities.load_data('train', mode='colorization', rgb=False, writer=writer)
 
     ###########
     # CVAE
 
-    cvae = Cvae(utilities)
+    cvae = Cvae(utilities, writer)
     if utilities.conf['LOAD_CVAE']:
         cvae.load_weights()
     if utilities.conf['TRAIN_CVAE']:
-        cvae.train(train_loader, test_loader, writer)
+        cvae.train(train_loader, val_loader)
     if utilities.conf['TEST_CVAE']:
         print("starting final testing")
-        cvae.test(test_loader, writer)
-
-    # FEATURE EXTRACTION
-    pred_train_loader = utilities.load_data('prediction', mode='classification', rgb=False)
-    pred_test_loader = utilities.load_data('prediction', mode='classification', rgb=False)
-
-    cvae.transfer_learning_train(pred_train_loader, writer)
-    cvae.transfer_learning_test(pred_test_loader, writer)
+        cvae.test(test_loader)
 
     utilities.test_complete()
 
@@ -65,6 +57,7 @@ if __name__ == '__main__':
     # foreach dir with config file launch experiment else create new experiment
     experiments = [str(exp) for exp in args.experiments.split(' ')]
     for experiment in experiments:
+        print("DIVCOLOR PROJECT WITH TITLE: ", experiment)
         # create or load experiment settings
         utils = Utilities(experiment, overwrite=args.overwrite)
         colorization(utils)

@@ -1,13 +1,17 @@
+import time
 from pathlib import Path
+
+import cv2
+import numpy as np
 import pandas as pd
+import torch
+import torch.nn as nn
+from torch.utils.data import SubsetRandomSampler
 from torch.utils.data.dataset import Dataset
 from torchvision import transforms
-import torch.nn as nn
-import torch
-import numpy as np
-import cv2
-import time
 import os
+import socket
+
 
 # "bands": ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"]
 
@@ -18,13 +22,32 @@ def rgb2lab(rgb):
     lab_img[:, :, 0] *= 255 / 100
     lab_img[:, :, 1] += 128
     lab_img[:, :, 2] += 128
-    # lab_img /= 255
-    lab_img = (lab_img / 128) - 1
+    lab_img /= 255
     return lab_img[:, :, 1:], lab_img[:, :, 0]
 
 
+# CIELab --> RGB conversion, with normalization [0-1]
+def lab2rgb(L, ab):
+    L = L.cpu().numpy()
+    ab = ab.cpu().detach().numpy()
+    Lab = np.concatenate((L, ab), axis=1)
+    Lab = np.transpose(Lab, (0, 2, 3, 1))
+    B, W, H, C = Lab.shape[0], Lab.shape[1], Lab.shape[2], Lab.shape[3]
+    Lab = np.reshape(Lab, (B * W, H, C))
+    Lab *= 255
+    Lab[:, :, 0] *= 100 / 255
+    Lab[:, :, 1] -= 128
+    Lab[:, :, 2] -= 128
+    Lab = cv2.cvtColor(Lab, cv2.COLOR_LAB2RGB)
+    Lab = np.reshape(Lab, (B, W, H, C))
+    Lab = np.transpose(Lab, (0, 3, 1, 2))
+    Lab = torch.from_numpy(Lab)
+    return Lab
+
+
 class BigEarthDataset(Dataset):
-    def __init__(self, csv_path, random_seed, bands, weights_file=None, n_samples=100000, dsize=128, RGB=1, mode='classification', skip_weights=False):
+    def __init__(self, csv_path, random_seed, bands, n_samples=100000, dsize=128, RGB=1, mode='classification',
+                 skip_weights=True, weights_file=None, bands_labels=[0, 1, 2, 3, 4, 5, 6, 7, 8]):
         """
         Args:
             csv_path (string): path to csv file containing folder name that contain images
@@ -62,6 +85,8 @@ class BigEarthDataset(Dataset):
         if not skip_weights:
             self.binedges = np.load(self.curr_dir / 'pot_weights/ab_quantize.npy')
             self.weights = np.load(os.path.join(self.curr_dir, 'pot_weights', weights_file))
+        # bands labels
+        self.bands_labels = bands_labels
 
     def __getitem__(self, index):
         # obtain the right folder
@@ -69,9 +94,12 @@ class BigEarthDataset(Dataset):
         # load torch images
         spectral_img = torch.load(imgs_file + '/all_bands.pt')
         # resize the image as specified in the params dsize
-        # spectral_img = torch.squeeze(nn.functional.interpolate(input=torch.unsqueeze(spectral_img, dim=0), size=self.dsize))
-        spectral_img = torch.squeeze(nn.functional.interpolate(spectral_img, size=self.dsize))
-
+        if socket.gethostname() == 'parrot':
+            spectral_img = torch.squeeze(nn.functional.interpolate(input=spectral_img, size=self.dsize))
+        else:
+            spectral_img = torch.squeeze(
+                nn.functional.interpolate(input=torch.unsqueeze(spectral_img, dim=0), size=self.dsize)
+            )
         # take only the bands specified in the init
         spectral_img = spectral_img[self.bands]
         # if RGB: invert the indices as it is saved as BGR
@@ -81,18 +109,20 @@ class BigEarthDataset(Dataset):
         if self.mode == "classification":
             # create multi-hot labels vector
             labels_index = list(map(int, self.labels_class[index][1:-1].split(',')))
-            labels_class = np.zeros(44)
+            labels_class = np.zeros(43)
             labels_class[labels_index] = 1
             # create labels vector, padded with -1
             pad = np.array([-1] * 6)
             pad[:len(labels_index)] = labels_index[:6]
-            return spectral_img, torch.tensor(labels_class), torch.tensor(pad)
+            return spectral_img, torch.tensor(self.bands_labels), torch.tensor(labels_class), torch.tensor(pad)
         else:  # MODE: COLORIZATION
             if self.RGB:
-                return self.generate_inputs(spectral_img)
+                return self.generate_inputs(spectral_img), torch.tensor(self.bands_labels)
             else:
-                indices = torch.tensor([3, 2, 1])
-                rgb = torch.index_select(input=spectral_img, dim=0, index=indices)
+                indices_rgb = torch.tensor([3, 2, 1])
+                indices_band = torch.tensor([0, 4, 5, 6, 7, 8, 9, 10, 11])
+                rgb = torch.index_select(input=spectral_img, dim=0, index=indices_rgb)
+                spectral_img = torch.index_select(input=spectral_img, dim=0, index=indices_band)
                 return spectral_img, self.generate_inputs(rgb)
 
     def __len__(self):
@@ -166,31 +196,30 @@ class BigEarthDataset(Dataset):
 
 if __name__ == "__main__":
     # Call dataset
-    big_earth = BigEarthDataset(csv_path='big_earth_all_torch_labels.csv', random_seed=19,
-                                bands=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                                n_samples=500, dsize=128, RGB=0, mode="colorization", skip_weights=False)
-    # train_idx, val_idx, test_idx = big_earth.split_dataset(0.2, 0.4)
-    #
+    big_earth = BigEarthDataset(csv_path='/home/potpov/Projects/PycharmProjects/trainship/pytorch_divcolor/datasets/bigearth/csv/big_earth_3000.csv', random_seed=19,
+                                bands=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], n_samples=3000,
+                                dsize=128, RGB=0, mode="colorization", skip_weights=True,
+                                bands_labels=[0, 1, 2, 3, 4, 5, 6, 7, 8])
+    train_idx, val_idx, test_idx = big_earth.split_dataset(0.2, 0.4)
+
     # train_sampler = SubsetRandomSampler(train_idx)
     # test_sampler = SubsetRandomSampler(test_idx)
     seq_sampler = torch.utils.data.SequentialSampler(big_earth)
 
-    # train_loader = torch.utils.data.DataLoader(big_earth, batch_size=1,
-    #                                            sampler=train_sampler, num_workers=0)
+    # train_loader = torch.utils.data.DataLoader(big_earth, batch_size=16,
+    #                                           sampler=train_sampler, num_workers=0)
     # test_loader = torch.utils.data.DataLoader(big_earth, batch_size=1,
     #                                           sampler=test_sampler, num_workers=0)
 
     train_loader = torch.utils.data.DataLoader(big_earth, batch_size=4,
-                                               sampler=seq_sampler, num_workers=0)
+                                                sampler=seq_sampler, num_workers=0)
 
     start_time = time.time()
     print("Start time: ", start_time)
 
-    for idx, (img, labels_class, lab_idx) in enumerate(train_loader):
+    # for idx, (img, band_labels, labels_class, lab_idx) in enumerate(train_loader):
+    #     print(idx)
+    for idx, (spectral, (ab, L, weights), emb_labels) in enumerate(train_loader):
         print(idx)
-        print(img.shape)
 
     print("time: ", time.time() - start_time)
-
-
-

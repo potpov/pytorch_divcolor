@@ -52,9 +52,6 @@ class CVAE(nn.Module):
         self.dec_upsamp5 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         self.final_conv = nn.Conv2d(64, 2, 1, stride=1, padding=0)
 
-        # prediction
-        self.class_fc = nn.Linear(4 * 4 * self.hidden_size, self.classes)
-
     def encoder(self, x):
         """
         :param x: AB COLOR IMAGE, shape: 2 x imgw x imgh
@@ -116,11 +113,6 @@ class CVAE(nn.Module):
         x = self.final_conv(x)
         return x
 
-    def prediction(self, z):
-        z = z.reshape(z.shape[0], -1)
-        z = self.class_fc(z)
-        return z, torch.sigmoid(z)
-
     def forward(self, color, inputs, prediction=False):
         """
         when training we accept color and greylevel, they are
@@ -135,9 +127,6 @@ class CVAE(nn.Module):
         """
 
         sc_feat64, sc_feat32, sc_feat16, sc_feat8, z_grey = self.cond_encoder(inputs)
-
-        if prediction:
-            return self.prediction(z_grey)
 
         if isinstance(color, type(None)):  # TEST TIME
             # z1 is sampled from Normal distribution,
